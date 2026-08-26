@@ -1,6 +1,8 @@
 import { ActivepiecesError, ErrorCode } from '@activepieces/core-utils'
-import { TriggerStrategy } from '@activepieces/pieces-framework'
-import { ApEnvironment, EngineResponseStatus, TriggerSourceScheduleType } from '@activepieces/shared'
+import { TriggerBase, TriggerStrategy } from '@activepieces/pieces-framework'
+import { ApEnvironment, EngineResponseStatus, FlowTriggerType, TriggerSourceScheduleType } from '@activepieces/shared'
+import type { FlowVersion } from '@activepieces/shared'
+import type { FastifyBaseLogger } from 'fastify'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockSubmitAndWaitForResponse = vi.fn()
@@ -8,12 +10,18 @@ const mockGetPlatformId = vi.fn().mockResolvedValue('platform-1')
 const mockDeleteListeners = vi.fn()
 const mockRemoveRepeatingJob = vi.fn()
 const mockAddJob = vi.fn()
-
+const mockTriggerSourceFindOneBy = vi.fn()
+const mockTriggerSourceSoftDelete = vi.fn()
+const mockFlowVersionGetOneOrThrow = vi.fn()
+const mockGetPieceTrigger = vi.fn()
+const mockTemplateTelemetrySendEvent = vi.fn()
 vi.mock('../../../../../src/app/helper/system/system', () => ({
     system: {
+        get: vi.fn().mockReturnValue(undefined),
         getOrThrow: vi.fn().mockReturnValue(ApEnvironment.PRODUCTION),
         getNumber: vi.fn().mockReturnValue(5),
         getNumberOrThrow: vi.fn().mockReturnValue(5),
+        getBoolean: vi.fn().mockReturnValue(false),
     },
 }))
 
@@ -43,8 +51,41 @@ vi.mock('../../../../../src/app/trigger/app-event-routing/app-event-routing.serv
     },
 }))
 
+vi.mock('../../../../../src/app/core/db/repo-factory', () => ({
+    repoFactory: vi.fn(() => () => ({
+        findOneBy: mockTriggerSourceFindOneBy,
+        softDelete: mockTriggerSourceSoftDelete,
+        findOne: vi.fn(),
+        save: vi.fn(),
+        find: vi.fn(),
+        existsBy: vi.fn(),
+    })),
+}))
+
+vi.mock('../../../../../src/app/flows/flow-version/flow-version.service', () => ({
+    flowVersionService: vi.fn(() => ({
+        getOneOrThrow: mockFlowVersionGetOneOrThrow,
+        getFlowVersionOrThrow: vi.fn(),
+    })),
+}))
+
+vi.mock('../../../../../src/app/trigger/trigger-source/trigger-utils', () => ({
+    triggerUtils: vi.fn(() => ({
+        getPieceTrigger: mockGetPieceTrigger,
+        getPieceTriggerOrThrow: vi.fn(),
+        getPieceTriggerByName: vi.fn(),
+    })),
+}))
+
+vi.mock('../../../../../src/app/template/template-telemetry/template-telemetry.service', () => ({
+    templateTelemetryService: vi.fn(() => ({
+        sendEvent: mockTemplateTelemetrySendEvent,
+    })),
+}))
+
 import { system } from '../../../../../src/app/helper/system/system'
 import { flowTriggerSideEffect } from '../../../../../src/app/trigger/trigger-source/flow-trigger-side-effect'
+import { triggerSourceService } from '../../../../../src/app/trigger/trigger-source/trigger-source-service'
 
 const mockLog = {
     info: vi.fn(),
@@ -56,7 +97,8 @@ const mockLog = {
     trace: vi.fn(),
     silent: vi.fn(),
     level: 'info',
-} as any
+} as unknown as FastifyBaseLogger
+
 
 const BASE_PARAMS = {
     flowId: 'flow-1',
@@ -66,7 +108,7 @@ const BASE_PARAMS = {
     simulate: false,
 }
 
-function makePollingTrigger() {
+function makePollingTrigger(): TriggerBase {
     return {
         name: 'test_trigger',
         displayName: 'Test Trigger',
@@ -76,14 +118,14 @@ function makePollingTrigger() {
         type: TriggerStrategy.POLLING,
         sampleData: {},
         testStrategy: 'TEST_FUNCTION',
-    } as any
+    } as unknown as TriggerBase
 }
 
-function makeManualTrigger() {
+function makeManualTrigger(): TriggerBase {
     return {
         ...makePollingTrigger(),
         type: TriggerStrategy.MANUAL,
-    }
+    } as unknown as TriggerBase
 }
 
 function okEngineResponse() {
@@ -257,7 +299,7 @@ describe('flowTriggerSideEffect', () => {
                 pieceTrigger: {
                     ...makePollingTrigger(),
                     type: TriggerStrategy.APP_WEBHOOK,
-                },
+                } as unknown as TriggerBase,
                 ignoreError: true,
             })
 
@@ -266,5 +308,125 @@ describe('flowTriggerSideEffect', () => {
                 flowId: 'flow-1',
             })
         })
+    })
+})
+
+describe('triggerSourceService.disable strict missing-trigger rejection', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+        mockGetPlatformId.mockResolvedValue('platform-1')
+        mockTriggerSourceFindOneBy.mockReset()
+        mockTriggerSourceSoftDelete.mockReset()
+        mockFlowVersionGetOneOrThrow.mockReset()
+        mockGetPieceTrigger.mockReset()
+        mockTemplateTelemetrySendEvent.mockReset()
+        mockSubmitAndWaitForResponse.mockReset()
+    })
+
+    const triggerSource = {
+        id: 'ts-1',
+        flowId: 'flow-1',
+        flowVersionId: 'fv-1',
+        projectId: 'proj-1',
+        pieceName: '@activepieces/piece-test',
+        pieceVersion: '0.1.0',
+        simulate: false,
+    }
+    function makePieceFlowVersion(): FlowVersion {
+        return {
+            id: 'fv-1',
+            flowId: 'flow-1',
+            trigger: {
+                type: FlowTriggerType.PIECE,
+                name: 'trigger',
+                displayName: 'Trigger',
+                valid: true,
+                lastUpdatedDate: new Date().toISOString(),
+                settings: {
+                    pieceName: '@activepieces/piece-test',
+                    pieceVersion: '0.1.0',
+                    triggerName: 'test_trigger',
+                    input: {},
+                    propertySettings: {},
+                },
+            },
+        } as unknown as FlowVersion
+    }
+
+    it('throws instead of soft-deleting when piece trigger metadata is missing and ignoreError is false', async () => {
+        mockTriggerSourceFindOneBy.mockResolvedValue(triggerSource)
+        const flowVersion = makePieceFlowVersion()
+        mockFlowVersionGetOneOrThrow.mockResolvedValue(flowVersion)
+        mockGetPieceTrigger.mockResolvedValue(null)
+
+        await expect(triggerSourceService(mockLog).disable({
+            projectId: 'proj-1',
+            flowId: 'flow-1',
+            simulate: false,
+            ignoreError: false,
+        })).rejects.toThrow(ActivepiecesError)
+
+        expect(mockGetPieceTrigger).toHaveBeenCalled()
+        expect(mockTriggerSourceSoftDelete).not.toHaveBeenCalled()
+        expect(mockSubmitAndWaitForResponse).not.toHaveBeenCalled()
+    })
+
+    it('soft-deletes when piece trigger metadata is missing and ignoreError is true', async () => {
+        mockTriggerSourceFindOneBy.mockResolvedValue(triggerSource)
+        const flowVersion = makePieceFlowVersion()
+        mockFlowVersionGetOneOrThrow.mockResolvedValue(flowVersion)
+        mockGetPieceTrigger.mockResolvedValue(null)
+
+        await triggerSourceService(mockLog).disable({
+            projectId: 'proj-1',
+            flowId: 'flow-1',
+            simulate: false,
+            ignoreError: true,
+        })
+
+        expect(mockTriggerSourceSoftDelete).toHaveBeenCalledWith({
+            id: 'ts-1',
+            projectId: 'proj-1',
+        })
+        expect(mockSubmitAndWaitForResponse).not.toHaveBeenCalled()
+    })
+
+    it('disables side effect and soft-deletes when piece trigger metadata is present', async () => {
+        mockTriggerSourceFindOneBy.mockResolvedValue(triggerSource)
+        const flowVersion = makePieceFlowVersion()
+        mockFlowVersionGetOneOrThrow.mockResolvedValue(flowVersion)
+        mockGetPieceTrigger.mockResolvedValue(makePollingTrigger())
+        mockSubmitAndWaitForResponse.mockResolvedValue({
+            status: EngineResponseStatus.OK,
+            response: {},
+            error: undefined,
+        })
+
+        await triggerSourceService(mockLog).disable({
+            projectId: 'proj-1',
+            flowId: 'flow-1',
+            simulate: false,
+            ignoreError: false,
+        })
+
+        expect(mockSubmitAndWaitForResponse).toHaveBeenCalled()
+        expect(mockTriggerSourceSoftDelete).toHaveBeenCalledWith({
+            id: 'ts-1',
+            projectId: 'proj-1',
+        })
+    })
+
+    it('returns early without error when trigger source does not exist', async () => {
+        mockTriggerSourceFindOneBy.mockResolvedValue(null)
+
+        await expect(triggerSourceService(mockLog).disable({
+            projectId: 'proj-1',
+            flowId: 'flow-1',
+            simulate: false,
+            ignoreError: false,
+        })).resolves.toBeUndefined()
+
+        expect(mockFlowVersionGetOneOrThrow).not.toHaveBeenCalled()
+        expect(mockTriggerSourceSoftDelete).not.toHaveBeenCalled()
     })
 })

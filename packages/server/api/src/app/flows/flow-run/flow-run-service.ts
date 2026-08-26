@@ -345,11 +345,11 @@ export const flowRunService = (log: FastifyBaseLogger) => ({
         return flowRun
     },
 
-    async test({ projectId, flowVersionId, parentRunId, stepNameToTest, triggeredBy }: TestParams): Promise<FlowRun> {
+    async test({ projectId, flowVersionId, parentRunId, stepNameToTest, triggeredBy, triggerPayload }: TestParams): Promise<FlowRun> {
         const flowVersion = await flowVersionService(log).getOneOrThrow(flowVersionId)
         await flowService(log).getOneOrThrow({ id: flowVersion.flowId, projectId })
 
-        const triggerPayload = await sampleDataService(log).getOrReturnEmpty({
+        const payload = triggerPayload ?? await sampleDataService(log).getOrReturnEmpty({
             projectId,
             flowVersion,
             stepName: flowVersion.trigger.name,
@@ -367,7 +367,7 @@ export const flowRunService = (log: FastifyBaseLogger) => ({
         }, log)
         return addToQueue({
             flowRun,
-            payload: triggerPayload,
+            payload,
             executionType: ExecutionType.BEGIN,
             workerHandlerId: undefined,
             httpRequestId: undefined,
@@ -877,6 +877,7 @@ type TestParams = {
     triggeredBy?: string
     parentRunId?: FlowRunId
     stepNameToTest?: string
+    triggerPayload?: Record<string, unknown>
 }
 
 type StartManualTriggerParams = {

@@ -1,25 +1,32 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
     FlowActionType,
     FlowOperationType,
     FlowTriggerType,
     FlowVersionState,
+    LATEST_FLOW_SCHEMA_VERSION,
     PieceTrigger,
     SampleDataSettings,
 } from '@activepieces/shared'
 import type { FlowVersion } from '@activepieces/shared'
+import type { FastifyBaseLogger } from 'fastify'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as FlowVersionMigrationModule from '../../../../../src/app/flows/flow-version/flow-version-migration.service'
 
 const mockGetPiece = vi.fn()
 const mockGetPlatformId = vi.fn().mockResolvedValue('platform-1')
 const mockRepoFindOne = vi.fn()
 const mockRepoSave = vi.fn()
 const mockRepoExists = vi.fn()
+const mockRepoUpdate = vi.fn()
+const mockMigrationsApply = vi.fn()
+const mockBackupStore = vi.fn()
 
 vi.mock('../../../../../src/app/core/db/repo-factory', () => ({
     repoFactory: vi.fn(() => () => ({
         findOne: mockRepoFindOne,
         save: mockRepoSave,
         exists: mockRepoExists,
+        update: mockRepoUpdate,
     })),
 }))
 
@@ -52,6 +59,17 @@ vi.mock('../../../../../src/app/flows/flow-version/flow-version-migration.servic
         migrate: vi.fn((v: FlowVersion) => Promise.resolve(v)),
     })),
 }))
+vi.mock('../../../../../src/app/flows/flow-version/migrations', () => ({
+    flowMigrations: {
+        apply: mockMigrationsApply,
+    },
+}))
+
+vi.mock('../../../../../src/app/flows/flow-version/flow-version-backup.service', () => ({
+    flowVersionBackupService: vi.fn(() => ({
+        store: mockBackupStore,
+    })),
+}))
 
 vi.mock('../../../../../src/app/flows/flow-version/flow-version-side-effects', () => ({
     flowVersionSideEffects: vi.fn(() => ({
@@ -65,7 +83,6 @@ vi.mock('../../../../../src/app/flows/flow-version/flow-version-validator-util',
     })),
 }))
 
-import type { FastifyBaseLogger } from 'fastify'
 import { flowVersionService } from '../../../../../src/app/flows/flow-version/flow-version.service'
 
 const mockLog = {
@@ -220,5 +237,95 @@ describe('flowVersionService.applyOperation - USE_AS_DRAFT', () => {
         })
 
         expect(result.trigger.type).toBe(FlowTriggerType.EMPTY)
+    })
+})
+
+describe('flowVersionMigrationService persistence CAS', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+        mockBackupStore.mockResolvedValue({})
+        mockRepoUpdate.mockResolvedValue(undefined)
+        mockRepoFindOne.mockReset()
+    })
+
+    it('does not overwrite a row locked after the stale draft was read', async () => {
+        const staleDraft = makeFlowVersion({ id: 'fv-stale' })
+        const persistedRow = { ...staleDraft, state: FlowVersionState.LOCKED }
+        const migratedFlowVersion = {
+            ...staleDraft,
+            schemaVersion: LATEST_FLOW_SCHEMA_VERSION,
+            connectionIds: ['connection-migrated'],
+            agentIds: ['agent-migrated'],
+        }
+        mockMigrationsApply.mockResolvedValue(migratedFlowVersion)
+        mockRepoFindOne.mockResolvedValue(persistedRow)
+        mockRepoUpdate.mockImplementation(async (criteria: { id: string, state?: FlowVersionState, schemaVersion?: unknown }, fields: Partial<FlowVersion>) => {
+            const schemaMatches = criteria.schemaVersion !== null && typeof criteria.schemaVersion === 'object' && '_type' in criteria.schemaVersion && criteria.schemaVersion._type === 'isNull'
+            if (criteria.id === persistedRow.id && criteria.state === FlowVersionState.DRAFT && schemaMatches && persistedRow.state === FlowVersionState.DRAFT && persistedRow.schemaVersion === null) {
+                Object.assign(persistedRow, fields)
+            }
+            // Simulate a driver that omits UpdateResult.affected.
+            return undefined
+        })
+
+        const { flowVersionMigrationService: actualMigrationService } = await vi.importActual<typeof FlowVersionMigrationModule>(
+            '../../../../../src/app/flows/flow-version/flow-version-migration.service',
+        )
+        await actualMigrationService(mockLog).migrate(staleDraft)
+
+        const updateCriteria = mockRepoUpdate.mock.calls[0][0] as { schemaVersion?: { _type?: string } }
+        expect(updateCriteria.schemaVersion?._type).toBe('isNull')
+        expect(mockRepoUpdate).toHaveBeenCalledTimes(1)
+        expect(mockRepoUpdate).toHaveBeenCalledWith({
+            id: staleDraft.id,
+            state: FlowVersionState.DRAFT,
+            schemaVersion: expect.objectContaining({ _type: 'isNull' }),
+        }, expect.objectContaining({
+            schemaVersion: LATEST_FLOW_SCHEMA_VERSION,
+            connectionIds: migratedFlowVersion.connectionIds,
+            agentIds: migratedFlowVersion.agentIds,
+        }))
+        expect(persistedRow).toMatchObject({
+            state: FlowVersionState.LOCKED,
+            schemaVersion: staleDraft.schemaVersion,
+            connectionIds: staleDraft.connectionIds,
+            agentIds: staleDraft.agentIds,
+        })
+    })
+    it('returns a concurrently edited draft instead of overwriting its trigger', async () => {
+        const staleDraft = makeFlowVersion({ id: 'fv-stale-draft' })
+        const persistedRow = { ...staleDraft }
+        const newerDraft = {
+            ...staleDraft,
+            schemaVersion: LATEST_FLOW_SCHEMA_VERSION,
+            trigger: { ...staleDraft.trigger, name: 'newer-trigger' },
+        }
+        const migratedFlowVersion = {
+            ...staleDraft,
+            schemaVersion: LATEST_FLOW_SCHEMA_VERSION,
+            trigger: { ...staleDraft.trigger, name: 'stale-migrated-trigger' },
+        }
+        mockMigrationsApply.mockResolvedValue(migratedFlowVersion)
+        mockRepoFindOne.mockResolvedValue(persistedRow)
+        mockRepoUpdate.mockImplementation(async (criteria: { id: string, state?: FlowVersionState, schemaVersion?: unknown }, fields: Partial<FlowVersion>) => {
+            // A newer draft edit commits while this stale migration is in flight.
+            Object.assign(persistedRow, newerDraft)
+            const schemaMatches = criteria.schemaVersion !== null && typeof criteria.schemaVersion === 'object' && '_type' in criteria.schemaVersion && criteria.schemaVersion._type === 'isNull'
+            if (criteria.id === persistedRow.id && criteria.state === FlowVersionState.DRAFT && schemaMatches && persistedRow.schemaVersion === null) {
+                Object.assign(persistedRow, fields)
+                return { affected: 1 }
+            }
+            return { affected: 0, raw: { affectedRows: 0 } }
+        })
+
+        const { flowVersionMigrationService: actualMigrationService } = await vi.importActual<typeof FlowVersionMigrationModule>(
+            '../../../../../src/app/flows/flow-version/flow-version-migration.service',
+        )
+        const result = await actualMigrationService(mockLog).migrate(staleDraft)
+
+        expect(result.schemaVersion).toBe(LATEST_FLOW_SCHEMA_VERSION)
+        expect(result.trigger.name).toBe('newer-trigger')
+        expect(persistedRow.trigger.name).toBe('newer-trigger')
+        expect(mockRepoUpdate).toHaveBeenCalledTimes(1)
     })
 })

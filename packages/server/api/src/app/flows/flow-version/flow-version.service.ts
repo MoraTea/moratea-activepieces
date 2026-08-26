@@ -24,6 +24,19 @@ export const flowVersionService = (log: FastifyBaseLogger) => ({
         entityManager,
         platformId,
     }: ApplyOperationParams): Promise<FlowVersion> {
+        const persistedFlowVersion = await flowVersionRepo(entityManager).findOne({
+            where: {
+                id: flowVersion.id,
+                flowId: flowVersion.flowId,
+            },
+        })
+        if (flowVersion.state !== FlowVersionState.DRAFT || persistedFlowVersion?.state !== FlowVersionState.DRAFT) {
+            const message = `Flow version ${flowVersion.id} is locked and cannot be modified`
+            throw new ActivepiecesError({
+                code: ErrorCode.FLOW_OPERATION_INVALID,
+                params: { message },
+            }, message)
+        }
         let operations: FlowOperationRequest[] = []
         let mutatedFlowVersion: FlowVersion = flowVersion
 

@@ -1,6 +1,7 @@
 import {
     FlowActionType,
     flowOperations,
+    FlowOperationStatus,
     FlowOperationType,
     FlowStatus,
     FlowTriggerType,
@@ -10,9 +11,14 @@ import {
     PieceType,
     PopulatedFlow,
     StepLocationRelativeToParent,
+    TriggerStrategy,
+    TriggerTestStrategy,
 } from '@activepieces/shared'
 import { FastifyInstance } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { flowService } from '../../../../../src/app/flows/flow/flow.service'
+import * as flowVersionValidatorModule from '../../../../../src/app/flows/flow-version/flow-version-validator-util'
 import { db } from '../../../../helpers/db'
 import { describeWithAuth } from '../../../../helpers/describe-with-auth'
 import {
@@ -826,6 +832,229 @@ describe('Flow Operations API', () => {
             const body = response?.json()
             expect(body.data).toHaveLength(1)
             expect(body.data[0].id).toBe(mockFlowVersion.id)
+        })
+    })
+
+    describe('flow version mutation lock', () => {
+        it('serializes CHANGE_STATUS with author edits via per-flow lock', async () => {
+            const ctx = await createTestContext(app!)
+            const flow = createMockFlow({ projectId: ctx.project.id, status: FlowStatus.DISABLED })
+            await db.save('flow', flow)
+            const published = createMockFlowVersion({
+                flowId: flow.id,
+                state: FlowVersionState.LOCKED,
+                valid: true,
+                trigger: {
+                    type: FlowTriggerType.PIECE,
+                    name: 'trigger',
+                    displayName: 'Trigger',
+                    valid: true,
+                    lastUpdatedDate: new Date().toISOString(),
+                    settings: {
+                        pieceName: '@activepieces/piece-schedule',
+                        pieceVersion: '0.1.5',
+                        triggerName: 'every_hour',
+                        input: {},
+                        propertySettings: {},
+                    },
+                },
+            })
+            const draft = createMockFlowVersion({
+                flowId: flow.id,
+                state: FlowVersionState.DRAFT,
+                valid: true,
+                trigger: {
+                    type: FlowTriggerType.PIECE,
+                    name: 'trigger',
+                    displayName: 'Trigger',
+                    valid: true,
+                    lastUpdatedDate: new Date().toISOString(),
+                    settings: {
+                        pieceName: '@activepieces/piece-schedule',
+                        pieceVersion: '0.1.5',
+                        triggerName: 'every_hour',
+                        input: {},
+                        propertySettings: {},
+                    },
+                },
+                created: new Date(Date.now() + 1000).toISOString(),
+            })
+            await db.save('flow_version', [published, draft])
+            await db.update('flow', flow.id, { publishedVersionId: published.id })
+            await db.save('piece_metadata', createMockPieceMetadata({
+                name: '@activepieces/piece-schedule',
+                version: '0.1.5',
+                pieceType: PieceType.OFFICIAL,
+                packageType: PackageType.REGISTRY,
+                triggers: {
+                    every_hour: {
+                        name: 'every_hour',
+                        displayName: 'Every Hour',
+                        description: '',
+                        requireAuth: false,
+                        props: {},
+                        type: TriggerStrategy.POLLING,
+                        sampleData: {},
+                        testStrategy: TriggerTestStrategy.TEST_FUNCTION,
+                    },
+                },
+            }))
+
+            const { promise: validationEntered, resolve: validationEnteredResolve } = Promise.withResolvers<undefined>()
+            const { promise: validationRelease, resolve: releaseValidation } = Promise.withResolvers<undefined>()
+            const originalValidationUtil = flowVersionValidatorModule.flowVersionValidationUtil
+            const validationSpy = vi.spyOn(flowVersionValidatorModule, 'flowVersionValidationUtil').mockImplementation((validatorLog) => {
+                const delegate = originalValidationUtil(validatorLog)
+                const originalPrepare = delegate.prepareRequest
+                delegate.prepareRequest = async (...args: Parameters<typeof originalPrepare>) => {
+                    validationEnteredResolve(undefined)
+                    await validationRelease
+                    return originalPrepare(...args)
+                }
+                return delegate
+            })
+
+            try {
+                const editPromise = flowService(app!.log).update({
+                    id: flow.id,
+                    userId: ctx.user.id,
+                    projectId: ctx.project.id,
+                    platformId: ctx.project.platformId,
+                    operation: {
+                        type: FlowOperationType.CHANGE_NAME,
+                        request: { displayName: 'serialized edit' },
+                    },
+                })
+                await validationEntered
+
+                let statusSettled = false
+                const statusPromise = flowService(app!.log).update({
+                    id: flow.id,
+                    userId: ctx.user.id,
+                    projectId: ctx.project.id,
+                    platformId: ctx.project.platformId,
+                    operation: {
+                        type: FlowOperationType.CHANGE_STATUS,
+                        request: { status: FlowStatus.ENABLED },
+                    },
+                }).then((res) => {
+                    statusSettled = true
+                    return res
+                })
+                // Distributed lock exposes no wait event; this probes whether status escaped before gate release.
+                // Real delay required: lock has no observable wait event, so we probe with a short real wait.
+                const { promise: statusDelay, resolve: resolveStatusDelay } = Promise.withResolvers<undefined>()
+                setTimeout(() => resolveStatusDelay(undefined), 50)
+                await statusDelay
+                expect(statusSettled).toBe(false)
+                releaseValidation(undefined)
+                const [edited, statusRes] = await Promise.all([editPromise, statusPromise])
+                expect(edited.version.displayName).toBe('serialized edit')
+                expect(statusRes.status).toBe(FlowStatus.ENABLED)
+                const flowAfter = await db.findOneByOrFail('flow', { id: flow.id })
+                expect(flowAfter.status).toBe(FlowStatus.ENABLED)
+            }
+            finally {
+                releaseValidation(undefined)
+                validationSpy.mockRestore()
+            }
+        })
+
+        it('serializes DELETE with author edits via per-flow lock', async () => {
+            const ctx = await createTestContext(app!)
+            const flow = createMockFlow({ projectId: ctx.project.id, status: FlowStatus.DISABLED })
+            await db.save('flow', flow)
+            const draft = createMockFlowVersion({
+                flowId: flow.id,
+                state: FlowVersionState.DRAFT,
+                valid: true,
+                trigger: {
+                    type: FlowTriggerType.PIECE,
+                    name: 'trigger',
+                    displayName: 'Trigger',
+                    valid: true,
+                    lastUpdatedDate: new Date().toISOString(),
+                    settings: {
+                        pieceName: '@activepieces/piece-schedule',
+                        pieceVersion: '0.0.1',
+                        triggerName: 'test',
+                        input: {},
+                        propertySettings: {},
+                    },
+                },
+            })
+            await db.save('flow_version', draft)
+
+            const { promise: validationEntered, resolve: validationEnteredResolve } = Promise.withResolvers<undefined>()
+            const { promise: validationRelease, resolve: releaseValidation } = Promise.withResolvers<undefined>()
+            const originalValidationUtil = flowVersionValidatorModule.flowVersionValidationUtil
+            const validationSpy = vi.spyOn(flowVersionValidatorModule, 'flowVersionValidationUtil').mockImplementation((validatorLog) => {
+                const delegate = originalValidationUtil(validatorLog)
+                const originalPrepare = delegate.prepareRequest
+                delegate.prepareRequest = async (...args: Parameters<typeof originalPrepare>) => {
+                    validationEnteredResolve(undefined)
+                    await validationRelease
+                    return originalPrepare(...args)
+                }
+                return delegate
+            })
+
+            try {
+                const editPromise = flowService(app!.log).update({
+                    id: flow.id,
+                    userId: ctx.user.id,
+                    projectId: ctx.project.id,
+                    platformId: ctx.project.platformId,
+                    operation: {
+                        type: FlowOperationType.CHANGE_NAME,
+                        request: { displayName: 'edit before delete' },
+                    },
+                })
+                await validationEntered
+
+                let deleteSettled = false
+                const deletePromise = flowService(app!.log).delete({
+                    id: flow.id,
+                    projectId: ctx.project.id,
+                }).then(() => {
+                    deleteSettled = true
+                })
+
+                // Distributed lock exposes no wait event; this probes whether delete escaped before gate release.
+                // Real delay required: lock has no observable wait event, so we probe with a short real wait.
+                const { promise: deleteDelay, resolve: resolveDeleteDelay } = Promise.withResolvers<undefined>()
+                setTimeout(() => resolveDeleteDelay(undefined), 50)
+                await deleteDelay
+                expect(deleteSettled).toBe(false)
+
+                releaseValidation(undefined)
+                await editPromise
+                await deletePromise
+
+                const flowAfter = await db.findOneBy('flow', { id: flow.id })
+                expect(flowAfter?.operationStatus).toBe(FlowOperationStatus.DELETING)
+            }
+            finally {
+                releaseValidation(undefined)
+                validationSpy.mockRestore()
+            }
+        })
+
+        it('deletes via per-flow lock without deadlock when skip flag is set', async () => {
+            const ctx = await createTestContext(app!)
+            const flow = createMockFlow({ projectId: ctx.project.id, status: FlowStatus.DISABLED })
+            await db.save('flow', flow)
+            const draft = createMockFlowVersion({ flowId: flow.id, state: FlowVersionState.DRAFT })
+            await db.save('flow_version', draft)
+
+            await flowService(app!.log).delete({
+                id: flow.id,
+                projectId: ctx.project.id,
+                skipVersionMutationLock: true,
+            })
+
+            const after = await db.findOneBy('flow', { id: flow.id })
+            expect(after?.operationStatus).toBe(FlowOperationStatus.DELETING)
         })
     })
 })

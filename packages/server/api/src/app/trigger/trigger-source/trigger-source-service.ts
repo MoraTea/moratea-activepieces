@@ -1,5 +1,5 @@
 import { ActivepiecesError, apId, ErrorCode, FlowId, isNil } from '@activepieces/core-utils'
-import { FlowVersion, PopulatedTriggerSource, TemplateTelemetryEventType, TriggerSource } from '@activepieces/shared'
+import { FlowTriggerType, FlowVersion, PopulatedTriggerSource, TemplateTelemetryEventType, TriggerSource } from '@activepieces/shared'
 import { FastifyBaseLogger } from 'fastify'
 import { In } from 'typeorm'
 import { repoFactory } from '../../core/db/repo-factory'
@@ -166,7 +166,19 @@ export const triggerSourceService = (log: FastifyBaseLogger) => {
             }
             const flowVersion = await flowVersionService(log).getOneOrThrow(triggerSource.flowVersionId)
             const pieceTrigger = await triggerUtils(log).getPieceTrigger({ flowVersion, projectId })
-            if (!isNil(pieceTrigger)) {
+            if (isNil(pieceTrigger)) {
+                if (flowVersion.trigger.type === FlowTriggerType.PIECE && !params.ignoreError) {
+                    throw new ActivepiecesError({
+                        code: ErrorCode.ENTITY_NOT_FOUND,
+                        params: {
+                            entityType: 'piece_trigger',
+                            entityId: flowVersion.trigger.settings.triggerName,
+                            message: `Trigger not found for piece ${flowVersion.trigger.settings.pieceName}@${flowVersion.trigger.settings.pieceVersion}`,
+                        },
+                    })
+                }
+            }
+            else {
                 await flowTriggerSideEffect(log).disable({
                     flowId: triggerSource.flowId,
                     flowVersionId: triggerSource.flowVersionId,

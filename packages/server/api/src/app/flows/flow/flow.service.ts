@@ -18,6 +18,7 @@ import { telemetry } from '../../helper/telemetry.utils'
 import { projectService } from '../../project/project-service'
 import { triggerSourceService } from '../../trigger/trigger-source/trigger-source-service'
 import { flowVersionMigrationService } from '../flow-version/flow-version-migration.service'
+import { withFlowVersionMutationLock } from '../flow-version/flow-version-mutation-lock'
 import { flowVersionRepo, flowVersionService } from '../flow-version/flow-version.service'
 import { flowFolderService } from '../folder/folder.service'
 import { flowExecutionCache } from './flow-execution-cache'
@@ -26,7 +27,11 @@ import { flowSideEffects } from './flow-service-side-effects'
 import { FlowEntity } from './flow.entity'
 import { flowRepo } from './flow.repo'
 
-
+const NON_FLOW_VERSION_OPERATIONS: Partial<Record<FlowOperationType, true>> = {
+    [FlowOperationType.CHANGE_FOLDER]: true,
+    [FlowOperationType.UPDATE_MINUTES_SAVED]: true,
+    [FlowOperationType.UPDATE_OWNER]: true,
+}
 
 export const flowService = (log: FastifyBaseLogger) => ({
     async create({ projectId, request, externalId, ownerId, templateId, createdBy, ip, emitEvents = true }: CreateParams): Promise<PopulatedFlow> {
@@ -330,7 +335,26 @@ export const flowService = (log: FastifyBaseLogger) => ({
         previousFlow,
         ip,
         emitEvents = true,
+        skipVersionMutationLock = false,
     }: UpdateParams): Promise<PopulatedFlow> {
+        if (!skipVersionMutationLock && !NON_FLOW_VERSION_OPERATIONS[operation.type]) {
+            return withFlowVersionMutationLock({
+                log,
+                flowId: id,
+                fn: () => flowService(log).update({
+                    id,
+                    userId,
+                    projectId,
+                    platformId,
+                    operation,
+                    previousFlow,
+                    ip,
+                    emitEvents,
+                    skipVersionMutationLock: true,
+                }),
+            })
+        }
+
         const flowBeforeOperation = emitEvents
             ? previousFlow ?? await this.getOnePopulatedOrThrow({ id, projectId })
             : undefined
@@ -402,24 +426,6 @@ export const flowService = (log: FastifyBaseLogger) => ({
             case FlowOperationType.UPDATE_OWNER: {
                 await flowRepo().update(id, {
                     ownerId: operation.request.ownerId,
-                })
-                break
-            }
-            case FlowOperationType.ADD_NOTE:
-            case FlowOperationType.UPDATE_NOTE:
-            case FlowOperationType.DELETE_NOTE: {
-                const lastVersion = await flowVersionService(
-                    log,
-                ).getFlowVersionOrThrow({
-                    flowId: id,
-                    versionId: undefined,
-                })
-                await flowVersionService(log).applyOperation({
-                    userId,
-                    projectId,
-                    platformId,
-                    flowVersion: lastVersion,
-                    userOperation: operation,
                 })
                 break
             }
@@ -512,7 +518,22 @@ export const flowService = (log: FastifyBaseLogger) => ({
         return publishedFlow
     },
 
-    async delete({ id, projectId, previousFlow, userId, ip, emitEvents = true }: DeleteParams): Promise<void> {
+    async delete({ id, projectId, previousFlow, userId, ip, emitEvents = true, skipVersionMutationLock = false }: DeleteParams): Promise<void> {
+        if (!skipVersionMutationLock) {
+            return withFlowVersionMutationLock({
+                log,
+                flowId: id,
+                fn: () => flowService(log).delete({
+                    id,
+                    projectId,
+                    previousFlow,
+                    userId,
+                    ip,
+                    emitEvents,
+                    skipVersionMutationLock: true,
+                }),
+            })
+        }
         const deletedFlow = emitEvents
             ? previousFlow ?? await this.getOnePopulatedOrThrow({ id, projectId })
             : undefined
@@ -543,7 +564,6 @@ export const flowService = (log: FastifyBaseLogger) => ({
             })
         }
     },
-
     async deleteAllByPlatformId(platformId: PlatformId): Promise<void> {
         const projectIds = await projectService(log).getProjectIdsByPlatform(platformId)
         const flows = await flowRepo().findBy({
@@ -611,21 +631,27 @@ export const flowService = (log: FastifyBaseLogger) => ({
         projectId,
         metadata,
     }: UpdateMetadataParams): Promise<PopulatedFlow> {
-        const flowToUpdate = await this.getOneOrThrow({
-            id,
-            projectId,
-        })
+        if (metadata !== undefined) {
+            const queryBuilder = flowRepo()
+                .createQueryBuilder()
+                .update()
+                .set({
+                    metadata: metadata === null ? null : () => ':metadata::jsonb',
+                })
+                .where('"id" = :id AND "projectId" = :projectId', { id, projectId })
 
-        flowToUpdate.metadata = metadata
+            if (metadata !== null) {
+                queryBuilder.setParameter('metadata', JSON.stringify(metadata))
+            }
 
-        await flowRepo().save(flowToUpdate)
+            await queryBuilder.execute()
+        }
 
         return this.getOnePopulatedOrThrow({
             id,
             projectId,
         })
     },
-
     async updateLastModified({ flowId, projectId, entityManager }: UpdateLastModifiedParams): Promise<void> {
         await flowRepo(entityManager).update({
             id: flowId,
@@ -847,6 +873,7 @@ type UpdateParams = EventEmissionParams & {
     operation: FlowOperationRequest
     platformId: PlatformId
     previousFlow?: PopulatedFlow
+    skipVersionMutationLock?: boolean
 }
 
 type UpdatePublishedVersionIdParams = {
@@ -861,6 +888,7 @@ type DeleteParams = EventEmissionParams & {
     projectId: ProjectId
     userId?: UserId
     previousFlow?: PopulatedFlow
+    skipVersionMutationLock?: boolean
 }
 
 type EventEmissionParams = {
