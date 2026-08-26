@@ -1,6 +1,7 @@
 import { McpToolDefinition, ProjectScopedMcpServer } from '@activepieces/shared'
 import { FastifyBaseLogger } from 'fastify'
 import { isToolSearchEnabled } from '../../tool-search/tool-search-flag'
+import { isExactReleaseToolsEnabled } from '../exact-release-tools-flag'
 import { apAddBranchTool } from './ap-add-branch'
 import { apAddStepTool } from './ap-add-step'
 import { apBuildFlowTool } from './ap-build-flow'
@@ -28,6 +29,7 @@ import { apManageFieldsTool } from './ap-manage-fields'
 import { apManageNotesTool } from './ap-manage-notes'
 import { apReadStepCodeTool } from './ap-read-step-code'
 import { apReadStepSettingsTool } from './ap-read-step-settings'
+import { apActivateFlowVersionTool, apFreezeFlowVersionTool, apGetFlowVersionTool, apRestoreFlowVersionAsDraftTool, apTestFlowVersionTool } from './ap-release-tools'
 import { apRenameFlowTool } from './ap-rename-flow'
 import { apResearchPiecesTool } from './ap-research-pieces'
 import { apResolvePropertyChainTool } from './ap-resolve-property-chain'
@@ -69,6 +71,7 @@ export const LOCKED_TOOL_NAMES: string[] = [
     'ap_find_records',
     'ap_list_runs',
     'ap_get_run',
+    'ap_get_flow_version',
     'ap_setup_guide',
 ] as const
  
@@ -97,6 +100,10 @@ export const ALL_CONTROLLABLE_TOOL_NAMES = [
     'ap_delete_branch',
     'ap_lock_and_publish',
     'ap_change_flow_status',
+    'ap_freeze_flow_version',
+    'ap_test_flow_version',
+    'ap_activate_flow_version',
+    'ap_restore_flow_version_as_draft',
     'ap_delete_flow',
     'ap_manage_notes',
     'ap_create_table',
@@ -118,6 +125,8 @@ export const activepiecesTools = (mcp: ProjectScopedMcpServer, userId: string | 
     apRenameFlowTool({ mcp, userId }, log),
     apListFlowsTool(mcp, log),
     apFlowStructureTool(mcp, log),
+    // Exact-release tools — gated behind AP_EXACT_RELEASE_TOOLS_ENABLED (default off).
+    ...(isExactReleaseToolsEnabled() ? [apGetFlowVersionTool(mcp, log)] : []),
     apReadStepCodeTool(mcp, log),
     apReadStepSettingsTool(mcp, log),
     apValidateFlowTool(mcp, log),
@@ -137,6 +146,8 @@ export const activepiecesTools = (mcp: ProjectScopedMcpServer, userId: string | 
     apUpdateBranchTool({ mcp, userId }, log),
     apDeleteBranchTool({ mcp, userId }, log),
     apLockAndPublishTool({ mcp, userId }, log),
+    // Exact-release mutation tools — same AP_EXACT_RELEASE_TOOLS_ENABLED flag.
+    ...(isExactReleaseToolsEnabled() ? [apFreezeFlowVersionTool({ mcp, userId }, log), apTestFlowVersionTool({ mcp, userId }, log), apActivateFlowVersionTool({ mcp, userId }, log), apRestoreFlowVersionAsDraftTool({ mcp, userId }, log)] : []),
     apChangeFlowStatusTool({ mcp, userId }, log),
     apDeleteFlowTool({ mcp, userId }, log),
     apManageNotesTool({ mcp, userId }, log),

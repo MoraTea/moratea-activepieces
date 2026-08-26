@@ -25,6 +25,11 @@ const TOOL_CATEGORIES: ToolCategory[] = [
           'Get the structure of a flow: step tree, configuration status, and valid insert locations',
       },
       {
+        name: 'ap_get_flow_version',
+        description:
+          'Read one exact flow version by ID without falling back to the latest version',
+      },
+      {
         name: 'ap_read_step_code',
         description:
           'Read full source code, package.json, and input of a CODE step',
@@ -134,6 +139,28 @@ const TOOL_CATEGORIES: ToolCategory[] = [
       {
         name: 'ap_lock_and_publish',
         description: 'Publish the current draft of a flow',
+      },
+    ],
+  },
+  {
+    label: 'Release Control',
+    tools: [
+      {
+        name: 'ap_freeze_flow_version',
+        description: 'Freeze one exact valid draft without changing production',
+      },
+      {
+        name: 'ap_test_flow_version',
+        description: 'Run one exact locked version in the test environment',
+      },
+      {
+        name: 'ap_activate_flow_version',
+        description:
+          'Activate one exact locked version with a published-version check',
+      },
+      {
+        name: 'ap_restore_flow_version_as_draft',
+        description: 'Copy one locked version into a new draft',
       },
     ],
   },
