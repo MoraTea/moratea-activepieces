@@ -2,6 +2,7 @@ import { Permission } from '@activepieces/core-utils'
 import type { McpToolContext, McpToolDefinition, ProjectScopedMcpServer } from '@activepieces/shared'
 import type { FastifyBaseLogger } from 'fastify'
 import { z } from 'zod'
+import { flowService } from '../../flows/flow/flow.service'
 import { exactFlowVersionService } from '../../flows/flow-version/exact-flow-version.service'
 import { mcpUtils } from './mcp-utils'
 
@@ -69,6 +70,10 @@ export const apGetFlowVersionTool = (mcp: ProjectScopedMcpServer, log: FastifyBa
                 flowId,
                 flowVersionId,
             })
+            const flow = await flowService(log).getOneOrThrow({
+                id: flowId,
+                projectId: mcp.projectId,
+            })
             const receipt = {
                 flowId: flowVersion.flowId,
                 flowVersionId: flowVersion.id,
@@ -77,6 +82,8 @@ export const apGetFlowVersionTool = (mcp: ProjectScopedMcpServer, log: FastifyBa
                 valid: flowVersion.valid,
                 created: flowVersion.created,
                 updated: flowVersion.updated,
+                currentPublishedVersionId: flow.publishedVersionId,
+                flowStatus: flow.status,
                 flowVersion,
             }
             return {

@@ -3,6 +3,7 @@ import { FlowOperationStatus, FlowOperationType, FlowStatus, FlowTriggerType, Fl
 import type { ProjectScopedMcpServer } from '@activepieces/shared'
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { databaseConnection } from '../../../../src/app/database/database-connection'
 import * as flowSideEffectsModule from '../../../../src/app/flows/flow/flow-service-side-effects'
 import { flowService } from '../../../../src/app/flows/flow/flow.service'
 import * as flowVersionMutationLockModule from '../../../../src/app/flows/flow-version/flow-version-mutation-lock'
@@ -301,6 +302,102 @@ describe('Exact release MCP tools', () => {
         expect(activated.publishedVersionId).toBe(target.id)
         expect(activated.status).toBe(FlowStatus.ENABLED)
         expect(triggerSource.flowVersionId).toBe(target.id)
+    })
+
+    it('reconciles activation after a lost successful response', async () => {
+        const ctx = await createTestContext(app)
+        await db.save('piece_metadata', createMockPieceMetadata({
+            name: '@activepieces/piece-schedule',
+            version: '0.1.5',
+            packageType: PackageType.REGISTRY,
+            pieceType: PieceType.OFFICIAL,
+            triggers: {
+                every_hour: {
+                    name: 'every_hour',
+                    displayName: 'Every Hour',
+                    description: 'Runs every hour',
+                    requireAuth: false,
+                    props: {},
+                    type: TriggerStrategy.POLLING,
+                    sampleData: {},
+                    testStrategy: TriggerTestStrategy.TEST_FUNCTION,
+                },
+            },
+        }))
+        const flow = createMockFlow({ projectId: ctx.project.id, status: FlowStatus.DISABLED })
+        const target = createMockFlowVersion({
+            flowId: flow.id,
+            state: FlowVersionState.LOCKED,
+            valid: true,
+            trigger: {
+                type: FlowTriggerType.PIECE,
+                name: 'trigger',
+                displayName: 'Every Hour',
+                valid: true,
+                lastUpdatedDate: new Date().toISOString(),
+                settings: {
+                    pieceName: '@activepieces/piece-schedule',
+                    pieceVersion: '0.1.5',
+                    triggerName: 'every_hour',
+                    input: {},
+                    propertySettings: {},
+                },
+            },
+        })
+        await db.save('flow', flow)
+        await db.save('flow_version', target)
+
+        // Model a client timeout after the server committed: the receipt is lost.
+        await apActivateFlowVersionTool({ mcp: makeMcp(ctx.project.id) }, log).execute({
+            flowId: flow.id,
+            flowVersionId: target.id,
+            expectedPublishedVersionId: null,
+        })
+
+        const readback = await apGetFlowVersionTool(makeMcp(ctx.project.id), log).execute({
+            flowId: flow.id,
+            flowVersionId: target.id,
+        })
+        expect(readback.structuredContent).toMatchObject({
+            flowId: flow.id,
+            flowVersionId: target.id,
+            currentPublishedVersionId: target.id,
+            flowStatus: FlowStatus.ENABLED,
+        })
+        const triggerSourceBeforeRetry = await triggerSourceModule.triggerSourceService(log).getByFlowId({
+            flowId: flow.id,
+            projectId: ctx.project.id,
+            simulate: false,
+        })
+        expect(triggerSourceBeforeRetry).not.toBeNull()
+        const triggerSourceIdBeforeRetry = triggerSourceBeforeRetry?.id
+        const triggerSourceFlowVersionIdBeforeRetry = triggerSourceBeforeRetry?.flowVersionId
+        expect(triggerSourceFlowVersionIdBeforeRetry).toBe(target.id)
+
+        const expectedPublishedVersionId = readback.structuredContent?.currentPublishedVersionId
+
+        const result = await apActivateFlowVersionTool({ mcp: makeMcp(ctx.project.id) }, log).execute({
+            flowId: flow.id,
+            flowVersionId: target.id,
+            expectedPublishedVersionId,
+        })
+        expect(result.structuredContent).toMatchObject({
+            flowId: flow.id,
+            flowVersionId: target.id,
+            previousPublishedVersionId: target.id,
+            publishedVersionId: target.id,
+            status: FlowStatus.ENABLED,
+        })
+        const triggerSources = await databaseConnection().getRepository('trigger_source').find({
+            where: {
+                flowId: flow.id,
+                projectId: ctx.project.id,
+            },
+        })
+        expect(triggerSources).toHaveLength(1)
+        expect(triggerSources[0]?.id).toBe(triggerSourceIdBeforeRetry)
+        expect(triggerSources[0]?.flowVersionId).toBe(triggerSourceFlowVersionIdBeforeRetry)
+        expect(triggerSources[0]?.flowVersionId).toBe(target.id)
     })
 
     it('restores a locked version as a new draft without modifying the source', async () => {
