@@ -1,9 +1,10 @@
 import { Permission } from '@activepieces/core-utils'
+import { isFlowRunStateTerminal } from '@activepieces/shared'
 import type { McpToolContext, McpToolDefinition, ProjectScopedMcpServer } from '@activepieces/shared'
-import type { FastifyBaseLogger } from 'fastify'
 import { z } from 'zod'
 import { flowService } from '../../flows/flow/flow.service'
 import { exactFlowVersionService } from '../../flows/flow-version/exact-flow-version.service'
+import { pollForRunCompletion } from './flow-run-utils'
 import { mcpUtils } from './mcp-utils'
 
 const exactFlowVersionInput = z.object({
@@ -13,6 +14,7 @@ const exactFlowVersionInput = z.object({
 
 const testFlowVersionInput = exactFlowVersionInput.extend({
     fixture: z.record(z.string(), z.unknown()),
+    waitForCompletion: z.boolean().default(false),
 })
 
 const activateFlowVersionInput = exactFlowVersionInput.extend({
@@ -100,24 +102,30 @@ export const apGetFlowVersionTool = (mcp: ProjectScopedMcpServer, log: FastifyBa
 export const apTestFlowVersionTool = ({ mcp }: McpToolContext, log: FastifyBaseLogger): McpToolDefinition => ({
     title: 'ap_test_flow_version',
     permission: Permission.WRITE_RUN,
-    description: 'Queue a test-environment run for one exact locked flow version using the supplied trigger fixture.',
+    description: 'Queue a test-environment run for one exact locked flow version using the supplied trigger fixture, optionally waiting for its terminal status.',
     inputSchema: testFlowVersionInput.shape,
     annotations: { destructiveHint: false, idempotentHint: false, openWorldHint: true },
     execute: async (args) => {
         try {
-            const { flowId, flowVersionId, fixture } = testFlowVersionInput.parse(args)
+            const { flowId, flowVersionId, fixture, waitForCompletion } = testFlowVersionInput.parse(args)
             const run = await exactFlowVersionService(log).test({
                 projectId: mcp.projectId,
                 flowId,
                 flowVersionId,
                 fixture,
             })
+            const finalRun = waitForCompletion
+                ? await pollForRunCompletion(log, run.id, mcp.projectId)
+                : run
+            if (waitForCompletion && !isFlowRunStateTerminal({ status: finalRun.status, ignoreInternalError: false })) {
+                throw new Error(`Run ${run.id} did not reach a terminal status within 120 seconds`)
+            }
             const receipt = {
                 runId: run.id,
                 flowId: run.flowId,
                 flowVersionId: run.flowVersionId,
                 environment: run.environment,
-                status: run.status,
+                status: finalRun.status,
             }
             return {
                 content: [{ type: 'text', text: JSON.stringify(receipt) }],

@@ -1,16 +1,18 @@
 import { apId } from '@activepieces/core-utils'
-import { FlowOperationStatus, FlowOperationType, FlowStatus, FlowTriggerType, FlowVersionState, McpServerType, PackageType, PieceType, RunEnvironment, TriggerStrategy, TriggerTestStrategy } from '@activepieces/shared'
-import type { ProjectScopedMcpServer } from '@activepieces/shared'
+import { FlowOperationStatus, FlowOperationType, FlowRunStatus, FlowStatus, FlowTriggerType, FlowVersionState, McpServerType, PackageType, PieceType, RunEnvironment, TriggerStrategy, TriggerTestStrategy } from '@activepieces/shared'
+import type { FlowRun, ProjectScopedMcpServer } from '@activepieces/shared'
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { databaseConnection } from '../../../../src/app/database/database-connection'
 import * as flowSideEffectsModule from '../../../../src/app/flows/flow/flow-service-side-effects'
 import { flowService } from '../../../../src/app/flows/flow/flow.service'
+import * as exactFlowVersionServiceModule from '../../../../src/app/flows/flow-version/exact-flow-version.service'
 import * as flowVersionMutationLockModule from '../../../../src/app/flows/flow-version/flow-version-mutation-lock'
 import * as flowVersionValidatorModule from '../../../../src/app/flows/flow-version/flow-version-validator-util'
 import { flowVersionService } from '../../../../src/app/flows/flow-version/flow-version.service'
 import { activepiecesTools } from '../../../../src/app/mcp/tools'
 import { apActivateFlowVersionTool, apFreezeFlowVersionTool, apGetFlowVersionTool, apRestoreFlowVersionAsDraftTool, apTestFlowVersionTool } from '../../../../src/app/mcp/tools/ap-release-tools'
+import * as flowRunUtilsModule from '../../../../src/app/mcp/tools/flow-run-utils'
 import * as triggerSourceModule from '../../../../src/app/trigger/trigger-source/trigger-source-service'
 import { db } from '../../../helpers/db'
 import { createMockFlow, createMockFlowVersion, createMockPieceMetadata } from '../../../helpers/mocks'
@@ -199,6 +201,7 @@ describe('Exact release MCP tools', () => {
             flowId: flow.id,
             flowVersionId: locked.id,
             fixture: { invoice_number: 'INV-1007' },
+            waitForCompletion: false,
         })
 
         expect(result.structuredContent).toMatchObject({
@@ -210,6 +213,42 @@ describe('Exact release MCP tools', () => {
         const run = await db.findOneByOrFail('flow_run', { id: result.structuredContent?.runId })
         expect(run.flowVersionId).toBe(locked.id)
         expect(run.environment).toBe(RunEnvironment.TESTING)
+        expect(run.status).toBe(FlowRunStatus.QUEUED)
+    })
+
+    it('returns a generic MCP error when the worker is unavailable while waiting for completion', async () => {
+        const flowId = apId()
+        const flowVersionId = apId()
+        const projectId = apId()
+        const run = {
+            id: apId(),
+            flowId,
+            flowVersionId,
+            environment: RunEnvironment.TESTING,
+            status: FlowRunStatus.QUEUED,
+        } as unknown as FlowRun
+        const test = vi.fn().mockResolvedValue(run)
+        const service = vi.spyOn(exactFlowVersionServiceModule, 'exactFlowVersionService').mockReturnValue({ test } as never)
+        const poll = vi.spyOn(flowRunUtilsModule, 'pollForRunCompletion').mockRejectedValue(new Error('worker unavailable'))
+        try {
+            const result = await apTestFlowVersionTool({ mcp: makeMcp(projectId) }, log).execute({
+                flowId,
+                flowVersionId,
+                fixture: {},
+                waitForCompletion: true,
+            })
+
+            expect(result.isError).toBe(true)
+            expect(result.content[0]).toMatchObject({
+                type: 'text',
+                text: expect.stringContaining('Exact flow-version test failed'),
+            })
+            expect(poll).toHaveBeenCalledWith(log, run.id, projectId)
+        }
+        finally {
+            poll.mockRestore()
+            service.mockRestore()
+        }
     })
 
     it('rejects activation of a draft version', async () => {
