@@ -88,6 +88,10 @@ describe('BuilderLayout MoraTea surface', () => {
   let container: HTMLDivElement | null = null;
   let root: Root | null = null;
 
+  function hasClass(element: Element, name: string): boolean {
+    return Array.from(element.classList).includes(name);
+  }
+
   function createLayout(): void {
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -144,18 +148,18 @@ describe('BuilderLayout MoraTea surface', () => {
       '[data-testid="sidebar-inset"]',
     ) as HTMLElement | null;
     expect(inset !== null).toBe(true);
-    expect(inset!).toHaveClass('bg-sidebar');
+    expect(hasClass(inset!, 'bg-sidebar')).toBe(true);
 
     const paddingContainer = inset!.firstElementChild as HTMLElement;
     const frame = paddingContainer.firstElementChild as HTMLElement;
-    expect(paddingContainer).toHaveClass('p-1.5');
-    expect(frame).toHaveClass('rounded-xl');
+    expect(hasClass(paddingContainer, 'p-1.5')).toBe(true);
+    expect(hasClass(frame, 'rounded-xl')).toBe(true);
     expect(
       Array.from(frame.classList).some((className) =>
         className.startsWith('shadow-'),
       ),
     ).toBe(true);
-    expect(frame).toHaveClass('border');
+    expect(hasClass(frame, 'border')).toBe(true);
     expect(
       document
         .querySelector('[data-testid="global-search-provider"]')
@@ -182,19 +186,19 @@ describe('BuilderLayout MoraTea surface', () => {
       '[data-testid="sidebar-inset"]',
     ) as HTMLElement | null;
     expect(inset !== null).toBe(true);
-    expect(inset!).not.toHaveClass('bg-sidebar');
-    expect(inset!).toHaveClass('h-full');
+    expect(hasClass(inset!, 'bg-sidebar')).toBe(false);
+    expect(hasClass(inset!, 'h-full')).toBe(true);
 
     const paddingContainer = inset!.firstElementChild as HTMLElement;
     const frame = paddingContainer.firstElementChild as HTMLElement;
-    expect(paddingContainer).not.toHaveClass('p-1.5');
-    expect(frame).not.toHaveClass('rounded-xl');
+    expect(hasClass(paddingContainer, 'p-1.5')).toBe(false);
+    expect(hasClass(frame, 'rounded-xl')).toBe(false);
     expect(
       Array.from(frame.classList).some((className) =>
         className.startsWith('shadow-'),
       ),
     ).toBe(false);
-    expect(frame).not.toHaveClass('border');
+    expect(hasClass(frame, 'border')).toBe(false);
     expect(
       document
         .querySelector('[data-testid="global-search-provider"]')
