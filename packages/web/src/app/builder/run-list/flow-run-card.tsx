@@ -32,6 +32,11 @@ import { flowRunMutations } from '@/features/flow-runs/hooks/flow-run-hooks';
 import { useAuthorization } from '@/hooks/authorization-hooks';
 import { authenticationSession } from '@/lib/authentication-session';
 import { formatUtils } from '@/lib/format-utils';
+import {
+  morateaEditorNavigationOptions,
+  useMorateaEditorSurface,
+  withMorateaEditorSurface,
+} from '@/lib/navigation-utils';
 import { cn } from '@/lib/utils';
 
 type FlowRunCardProps = {
@@ -49,6 +54,7 @@ const FlowRunCard = React.memo(
     );
     const projectId = authenticationSession.getProjectId();
     const navigate = useNavigate();
+    const isMorateaSurface = useMorateaEditorSurface();
 
     const [isRetryDropdownOpen, setIsRetryDropdownOpen] =
       useState<boolean>(false);
@@ -66,7 +72,17 @@ const FlowRunCard = React.memo(
         })}
         style={{ height: `${FLOW_CARD_HEIGHT}px` }}
         onClick={() => {
-          navigate(`/runs/${run.id}`);
+          const path = withMorateaEditorSurface(
+            `/runs/${run.id}`,
+            isMorateaSurface,
+          );
+          const navigationOptions =
+            morateaEditorNavigationOptions(isMorateaSurface);
+          if (navigationOptions) {
+            navigate(path, navigationOptions);
+            return;
+          }
+          navigate(path);
         }}
         key={run.id}
       >
@@ -130,89 +146,91 @@ const FlowRunCard = React.memo(
             </p>
           )}
         </div>
-        <div className="ml-auto font-medium">
-          {isRetryingRun && (
-            <LoadingSpinner className="size-4"></LoadingSpinner>
-          )}
+        {!isMorateaSurface && (
+          <div className="ml-auto font-medium">
+            {isRetryingRun && (
+              <LoadingSpinner className="size-4"></LoadingSpinner>
+            )}
 
-          {!isRetryingRun && (
-            <PermissionNeededTooltip
-              hasPermission={userHasPermissionToRetryRun}
-            >
-              <DropdownMenu
-                modal={false}
-                open={isRetryDropdownOpen}
-                onOpenChange={setIsRetryDropdownOpen}
+            {!isRetryingRun && (
+              <PermissionNeededTooltip
+                hasPermission={userHasPermissionToRetryRun}
               >
-                <Tooltip>
-                  <TooltipTrigger>
-                    <DropdownMenuTrigger>
-                      <Button
-                        variant="ghost"
-                        size={'icon'}
-                        className={cn(
-                          'group-hover:opacity-100 opacity-0 rounded-full bg-accent drop-shadow-md',
-                          {
-                            'opacity-100': isRetryDropdownOpen,
-                          },
-                        )}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                      >
-                        <Repeat className="w-4 h-4"></Repeat>
-                      </Button>
-                    </DropdownMenuTrigger>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('Retry run')}</TooltipContent>
-                </Tooltip>
-                <DropdownMenuContent>
-                  <DropdownMenuItem
-                    disabled={!userHasPermissionToRetryRun}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      retryRun({
-                        runId: run.id,
-                        flowId: run.flowId,
-                        projectId: projectId!,
-                        retryStrategy: FlowRetryStrategy.ON_LATEST_VERSION,
-                      });
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <div className="flex flex-row gap-2 items-center">
-                      <span>{t('On latest version')}</span>
-                    </div>
-                  </DropdownMenuItem>
-
-                  {isFailedState(run.status) && (
+                <DropdownMenu
+                  modal={false}
+                  open={isRetryDropdownOpen}
+                  onOpenChange={setIsRetryDropdownOpen}
+                >
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <DropdownMenuTrigger>
+                        <Button
+                          variant="ghost"
+                          size={'icon'}
+                          className={cn(
+                            'group-hover:opacity-100 opacity-0 rounded-full bg-accent drop-shadow-md',
+                            {
+                              'opacity-100': isRetryDropdownOpen,
+                            },
+                          )}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          <Repeat className="w-4 h-4"></Repeat>
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('Retry run')}</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent>
                     <DropdownMenuItem
+                      disabled={!userHasPermissionToRetryRun}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        if (!isRetryingRun) {
-                          retryRun({
-                            runId: run.id,
-                            flowId: run.flowId,
-                            projectId: projectId!,
-                            retryStrategy: FlowRetryStrategy.FROM_FAILED_STEP,
-                          });
-                        }
+                        retryRun({
+                          runId: run.id,
+                          flowId: run.flowId,
+                          projectId: projectId!,
+                          retryStrategy: FlowRetryStrategy.ON_LATEST_VERSION,
+                        });
                       }}
                       className="cursor-pointer"
                     >
                       <div className="flex flex-row gap-2 items-center">
-                        <span>{t('From failed step')}</span>
+                        <span>{t('On latest version')}</span>
                       </div>
                     </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </PermissionNeededTooltip>
-          )}
-        </div>
+
+                    {isFailedState(run.status) && (
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!isRetryingRun) {
+                            retryRun({
+                              runId: run.id,
+                              flowId: run.flowId,
+                              projectId: projectId!,
+                              retryStrategy: FlowRetryStrategy.FROM_FAILED_STEP,
+                            });
+                          }
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <div className="flex flex-row gap-2 items-center">
+                          <span>{t('From failed step')}</span>
+                        </div>
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </PermissionNeededTooltip>
+            )}
+          </div>
+        )}
       </CardListItem>
     );
   },

@@ -3,6 +3,11 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { useResourceLock } from '@/hooks/use-resource-lock';
+import {
+  morateaEditorNavigationOptions,
+  useMorateaEditorSurface,
+  withMorateaEditorSurface,
+} from '@/lib/navigation-utils';
 
 import { useBuilderStateContext } from '../../builder-hooks';
 import { flowCanvasHooks } from '../hooks';
@@ -16,6 +21,7 @@ function useFlowLock() {
   const run = useBuilderStateContext((state) => state.run);
   const readonlySetByLock = useRef(false);
   const navigate = useNavigate();
+  const isMorateaSurface = useMorateaEditorSurface();
   const { switchToDraft } = flowCanvasHooks.useSwitchToDraft();
 
   // refresh the flow in place after a successful take-over; a full-page
@@ -26,11 +32,21 @@ function useFlowLock() {
   // router, so window.location never reflects the in-app route.
   const onTakeOver = useCallback(() => {
     if (!isNil(run)) {
-      navigate(`/flows/${flowId}`);
-    } else {
-      switchToDraft();
+      const path = withMorateaEditorSurface(
+        `/flows/${flowId}`,
+        isMorateaSurface,
+      );
+      const navigationOptions =
+        morateaEditorNavigationOptions(isMorateaSurface);
+      if (navigationOptions) {
+        navigate(path, navigationOptions);
+        return;
+      }
+      navigate(path);
+      return;
     }
-  }, [run, navigate, flowId, switchToDraft]);
+    switchToDraft();
+  }, [run, navigate, flowId, isMorateaSurface, switchToDraft]);
 
   const { lockedBy, takeOver } = useResourceLock({
     resourceId: flowId,

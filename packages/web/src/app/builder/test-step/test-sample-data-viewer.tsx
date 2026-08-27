@@ -51,6 +51,7 @@ type RetestButtonProps = {
   isSaving: boolean;
   isTesting: boolean;
   onRetest: () => void;
+  hideRetest?: boolean;
 };
 
 type ActiveTab = 'Input' | 'Output' | 'Logs';
@@ -74,6 +75,7 @@ export const TestSampleDataViewer = React.memo(
       onRetest,
       onCancelTesting,
       hideCancel,
+      hideRetest,
       sampleDataInput,
       consoleLogs,
       explanationContext,
@@ -170,7 +172,7 @@ export const TestSampleDataViewer = React.memo(
           <CancelTestingBar
             onCancel={hideCancel ? undefined : onCancelTesting}
           />
-        ) : (
+        ) : hideRetest ? null : (
           <RetestActionBar
             onRetest={onRetest}
             disabled={!isValid || isSaving}

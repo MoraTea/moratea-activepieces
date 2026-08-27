@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 
 import { projectCollectionUtils } from '@/features/projects';
 import {
+  buildCurrentProjectRedirectPath,
   FROM_QUERY_PARAM,
   useDefaultRedirectPath,
 } from '@/lib/navigation-utils';
@@ -41,6 +42,13 @@ export const TokenCheckerWrapper: React.FC<{ children: React.ReactNode }> = ({
   return <>{children}</>;
 };
 
+export const buildCurrentProjectRedirectPathForTest =
+  buildCurrentProjectRedirectPath;
+
+// Pure helper extracted from RedirectToCurrentProjectRoute — keeps route
+// replacement plus searchParams.toString() exact for preservation tests.
+export { buildCurrentProjectRedirectPath };
+
 type RedirectToCurrentProjectRouteProps = {
   path: string;
   children: React.ReactNode;
@@ -62,21 +70,14 @@ const RedirectToCurrentProjectRoute: React.FC<
     );
   }
 
-  const pathWithParams = `${path.startsWith('/') ? path : `/${path}`}`.replace(
-    /:(\w+)/g,
-    (_, param) => params[param] ?? '',
-  );
-
   const searchParamsString = searchParams.toString();
-  const pathWithParamsAndSearchParams = `${pathWithParams}${
-    searchParamsString ? `?${searchParamsString}` : ''
-  }`;
-  return (
-    <Navigate
-      to={`/projects/${currentProjectId}${pathWithParamsAndSearchParams}`}
-      replace
-    />
+  const redirectPath = buildCurrentProjectRedirectPath(
+    currentProjectId,
+    path,
+    params as Record<string, string | undefined>,
+    searchParamsString,
   );
+  return <Navigate to={redirectPath} replace />;
 };
 
 interface ProjectRouterWrapperProps {
