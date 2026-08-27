@@ -1,6 +1,7 @@
 import { Permission } from '@activepieces/core-utils'
 import { isFlowRunStateTerminal } from '@activepieces/shared'
 import type { McpToolContext, McpToolDefinition, ProjectScopedMcpServer } from '@activepieces/shared'
+import type { FastifyBaseLogger } from 'fastify'
 import { z } from 'zod'
 import { flowService } from '../../flows/flow/flow.service'
 import { exactFlowVersionService } from '../../flows/flow-version/exact-flow-version.service'
