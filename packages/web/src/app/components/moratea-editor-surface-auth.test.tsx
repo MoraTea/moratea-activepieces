@@ -12,7 +12,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = false;
 const harness = vi.hoisted(() => ({
   loggedIn: false,
   onboarding: false,
-  clearSession: vi.fn(),
+  redirectToSignIn: vi.fn(),
   logOut: vi.fn(),
   reset: vi.fn(),
   useCurrentPlatform: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('../../lib/authentication-session', () => ({
   authenticationSession: {
     isLoggedIn: () => harness.loggedIn,
     isOnboarding: () => harness.onboarding,
-    clearSession: harness.clearSession,
+    redirectToSignIn: harness.redirectToSignIn,
     logOut: harness.logOut,
   },
 }));
@@ -105,31 +105,34 @@ describe('AllowOnlyLoggedInUserOnlyGuard return location', () => {
   const currentLocation = () =>
     container.querySelector('[data-testid="location"]')?.textContent ?? '';
 
-  it('preserves the MoraTea surface query while clearing an unauthenticated session', async () => {
+  it('reloads sign-in with the exact MoraTea return location', () => {
     renderGuard('/flows/flow-1?surface=moratea');
 
-    await vi.waitFor(() => {
-      const location = new URL(currentLocation(), 'https://example.test');
-      expect(location.pathname).toBe('/sign-in');
-      expect(location.searchParams.get('from')).toBe(
-        '/flows/flow-1?surface=moratea',
-      );
-    });
-    expect(harness.clearSession).toHaveBeenCalledOnce();
-    expect(harness.logOut).not.toHaveBeenCalled();
+    expect(currentLocation()).toBe('/flows/flow-1?surface=moratea');
     expect(harness.reset).toHaveBeenCalledOnce();
+    expect(harness.redirectToSignIn).toHaveBeenCalledOnce();
+    expect(harness.redirectToSignIn).toHaveBeenCalledWith(
+      '/flows/flow-1?surface=moratea',
+    );
+    expect(harness.reset.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.redirectToSignIn.mock.invocationCallOrder[0],
+    );
+    expect(
+      container.querySelector('[data-testid="protected-child"]'),
+    ).toBeNull();
+    expect(harness.logOut).not.toHaveBeenCalled();
   });
 
-  it('preserves a normal path and query in the sign-in return location', async () => {
+  it('passes a normal path and query to the reload redirect unchanged', () => {
     renderGuard('/projects/project-1/flows?folderId=folder-1&view=grid');
 
-    await vi.waitFor(() => {
-      const location = new URL(currentLocation(), 'https://example.test');
-      expect(location.pathname).toBe('/sign-in');
-      expect(location.searchParams.get('from')).toBe(
-        '/projects/project-1/flows?folderId=folder-1&view=grid',
-      );
-    });
+    expect(currentLocation()).toBe(
+      '/projects/project-1/flows?folderId=folder-1&view=grid',
+    );
+    expect(harness.redirectToSignIn).toHaveBeenCalledOnce();
+    expect(harness.redirectToSignIn).toHaveBeenCalledWith(
+      '/projects/project-1/flows?folderId=folder-1&view=grid',
+    );
   });
 
   it('leaves logged-in children unchanged', () => {
@@ -141,7 +144,7 @@ describe('AllowOnlyLoggedInUserOnlyGuard return location', () => {
       container.querySelector('[data-testid="protected-child"]')?.textContent,
     ).toBe('protected');
     expect(currentLocation()).toBe('/flows/flow-1?surface=moratea');
-    expect(harness.clearSession).not.toHaveBeenCalled();
+    expect(harness.redirectToSignIn).not.toHaveBeenCalled();
     expect(harness.logOut).not.toHaveBeenCalled();
   });
 });

@@ -11,6 +11,18 @@ import { authenticationApi } from '@/api/authentication-api';
 import { queryClient } from '@/app/query-client';
 
 import { ApStorage } from './ap-browser-storage';
+export function normalizeInternalReturnPath(from: unknown): string {
+  if (
+    typeof from !== 'string' ||
+    !from.startsWith('/') ||
+    from.startsWith('//')
+  ) {
+    return '/';
+  }
+  const internalUrl = new URL(from, 'https://internal.invalid');
+  return internalUrl.origin === 'https://internal.invalid' ? from : '/';
+}
+
 const tokenKey = 'token';
 const projectIdKey = 'projectId';
 export const authenticationSession = {
@@ -126,6 +138,16 @@ export const authenticationSession = {
   clearSession() {
     ApStorage.getInstance().removeItem(projectIdKey);
     ApStorage.getInstance().removeItem(tokenKey);
+  },
+  getSignInUrl(from: string): string {
+    const searchParams = new URLSearchParams({
+      from: normalizeInternalReturnPath(from),
+    });
+    return `/sign-in?${searchParams.toString()}`;
+  },
+  redirectToSignIn(from: string) {
+    this.clearSession();
+    window.location.replace(this.getSignInUrl(from));
   },
   logOut() {
     this.clearSession();

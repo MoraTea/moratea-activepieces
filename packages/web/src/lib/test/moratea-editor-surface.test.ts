@@ -172,6 +172,15 @@ describe('useRedirectAfterLogin', () => {
 
     expect(mockNavigate.mock.calls).toEqual([['/']]);
   });
+
+  it.each(['//attacker.example/steal', 'https://attacker.example/steal'])(
+    'falls back to root for an unsafe return path: %s',
+    (from) => {
+      invokeRedirect(from);
+
+      expect(mockNavigate.mock.calls).toEqual([['/']]);
+    },
+  );
 });
 
 describe('buildCurrentProjectRedirectPath', () => {

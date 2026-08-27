@@ -8,7 +8,10 @@ import { authenticationApi } from '@/api/authentication-api';
 import { LoadingScreen } from '@/components/custom/loading-screen';
 import { internalErrorToast } from '@/components/ui/sonner';
 import { api } from '@/lib/api';
-import { authenticationSession } from '@/lib/authentication-session';
+import {
+  authenticationSession,
+  normalizeInternalReturnPath,
+} from '@/lib/authentication-session';
 import {
   FROM_QUERY_PARAM,
   isMorateaEditorSurfaceReturnPath,
@@ -32,7 +35,7 @@ const RedirectPage: React.FC = React.memo(() => {
     const state = tryParseState(params.get(STATE_QUERY_PARAM));
     if (state && state[LOGIN_QUERY_PARAM] && code) {
       const providerName = state[PROVIDER_NAME_QUERY_PARAM];
-      const from = state[FROM_QUERY_PARAM];
+      const from = normalizeInternalReturnPath(state[FROM_QUERY_PARAM]);
       const handleThirdPartyLogin = async () => {
         try {
           const data = await authenticationApi.claimThirdPartyRequest({

@@ -17,11 +17,9 @@ export const AllowOnlyLoggedInUserOnlyGuard = ({
   const { reset } = useTelemetry();
   const location = useLocation();
   if (!authenticationSession.isLoggedIn()) {
-    authenticationSession.clearSession();
     reset();
-    const searchParams = new URLSearchParams();
-    searchParams.set('from', location.pathname + location.search);
-    return <Navigate to={`/sign-in?${searchParams.toString()}`} replace />;
+    authenticationSession.redirectToSignIn(location.pathname + location.search);
+    return null;
   }
   if (authenticationSession.isOnboarding()) {
     return <Navigate to="/create-platform" replace />;

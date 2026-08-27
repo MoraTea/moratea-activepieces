@@ -1,6 +1,7 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useEmbedding } from '@/components/providers/embed-provider';
+import { normalizeInternalReturnPath } from '@/lib/authentication-session';
 
 export const useNewWindow = () => {
   const { embedState } = useEmbedding();
@@ -109,7 +110,9 @@ export const useRedirectAfterLogin = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const defaultRedirectPath = useDefaultRedirectPath();
-  const from = searchParams.get(FROM_QUERY_PARAM) ?? defaultRedirectPath;
+  const from = normalizeInternalReturnPath(
+    searchParams.get(FROM_QUERY_PARAM) ?? defaultRedirectPath,
+  );
   return () =>
     isMorateaEditorSurfaceReturnPath(from)
       ? navigate(from, { replace: true })

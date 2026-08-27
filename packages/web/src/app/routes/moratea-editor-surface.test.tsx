@@ -44,6 +44,10 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('@/lib/authentication-session', () => ({
   authenticationSession: { saveResponse: harness.saveResponse },
+  normalizeInternalReturnPath: (from: unknown) =>
+    typeof from === 'string' && from.startsWith('/') && !from.startsWith('//')
+      ? from
+      : '/',
 }));
 
 import { RedirectPage } from './redirect';
@@ -102,6 +106,18 @@ describe('RedirectPage MoraTea editor surface return', () => {
     });
     expect(harness.navigate).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['//attacker.example/steal', 'https://attacker.example/steal'])(
+    'falls back to root for an unsafe OAuth return path: %s',
+    async (from) => {
+      renderRedirect(from, 'project-1');
+
+      await vi.waitFor(() => {
+        expect(harness.navigate).toHaveBeenCalledWith('/');
+      });
+      expect(harness.navigate).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('keeps projectless third-party login navigation unchanged', async () => {
     renderRedirect('/projects/project-1/flows/flow-1?surface=moratea', null);
