@@ -27,6 +27,40 @@ export const STATE_QUERY_PARAM = 'state';
 export const LOGIN_QUERY_PARAM = 'activepiecesLogin';
 export const PROVIDER_NAME_QUERY_PARAM = 'providerName';
 
+export const MORATEA_SURFACE_QUERY_PARAM = 'surface';
+export const MORATEA_SURFACE_VALUE = 'moratea';
+
+export const SURFACE_QUERY_PARAM = MORATEA_SURFACE_QUERY_PARAM;
+export const MORATEA_EDITOR_SURFACE = MORATEA_SURFACE_VALUE;
+
+export const isMorateaEditorSurface = (
+  searchParams: URLSearchParams,
+): boolean => {
+  return (
+    searchParams.get(MORATEA_SURFACE_QUERY_PARAM) === MORATEA_SURFACE_VALUE
+  );
+};
+
+export const useMorateaEditorSurface = (): boolean => {
+  const [searchParams] = useSearchParams();
+  return isMorateaEditorSurface(searchParams);
+};
+
+export const buildCurrentProjectRedirectPath = (
+  currentProjectId: string,
+  path: string,
+  params: Record<string, string | undefined>,
+  searchParamsString: string,
+): string => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const pathWithParams = normalizedPath.replace(
+    /:(\w+)/g,
+    (_, param) => params[param] ?? '',
+  );
+  const suffix = searchParamsString ? `?${searchParamsString}` : '';
+  return `/projects/${currentProjectId}${pathWithParams}${suffix}`;
+};
+
 export const useDefaultRedirectPath = () => {
   return '/';
 };
