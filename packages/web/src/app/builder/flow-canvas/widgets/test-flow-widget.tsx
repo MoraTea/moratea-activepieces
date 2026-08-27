@@ -16,8 +16,15 @@ import { flowRunUtils } from '@/features/flow-runs';
 import { flowHooks } from '@/features/flows';
 import { pieceSelectorUtils } from '@/features/pieces';
 import { useAuthorization } from '@/hooks/authorization-hooks';
+import { useMorateaEditorSurface } from '@/lib/navigation-utils';
 
 import { AboveTriggerButton } from './above-trigger-button';
+
+const shouldHideTestFlowLauncher = (
+  isMorateaSurface: boolean,
+  isChatTrigger: boolean,
+  isManualTrigger: boolean,
+): boolean => isMorateaSurface && (isChatTrigger || isManualTrigger);
 
 const TestFlowWidget = () => {
   const [
@@ -36,6 +43,7 @@ const TestFlowWidget = () => {
     state.flow.publishedVersionId,
   ]);
   const builderStore = useBuilderStore();
+  const isMorateaSurface = useMorateaEditorSurface();
 
   const { checkAccess } = useAuthorization();
   const userHasPermissionToRun = checkAccess(Permission.WRITE_RUN);
@@ -79,6 +87,11 @@ const TestFlowWidget = () => {
   }
 
   if (hideTestWidget) {
+    return null;
+  }
+  if (
+    shouldHideTestFlowLauncher(isMorateaSurface, isChatTrigger, isManualTrigger)
+  ) {
     return null;
   }
   if (
@@ -126,4 +139,4 @@ const TestFlowWidget = () => {
 
 TestFlowWidget.displayName = 'TestFlowWidget';
 
-export { TestFlowWidget };
+export { shouldHideTestFlowLauncher, TestFlowWidget };

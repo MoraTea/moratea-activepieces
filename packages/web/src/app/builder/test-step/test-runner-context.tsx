@@ -16,6 +16,7 @@ import React, {
 import { useBuilderStateContext } from '@/app/builder/builder-hooks';
 import { ChatDrawerSource } from '@/app/builder/types';
 import { pieceSelectorUtils, piecesHooks } from '@/features/pieces';
+import { useMorateaEditorSurface } from '@/lib/navigation-utils';
 
 import { DynamicPropertiesContext } from '../piece-properties/dynamic-properties-context';
 
@@ -34,6 +35,14 @@ const isReturnResponseAndWaitForWebhook = (step: FlowAction) =>
   step.type === FlowActionType.PIECE &&
   step.settings.pieceName === '@activepieces/piece-webhook' &&
   step.settings.actionName === 'return_response_and_wait_for_next_webhook';
+
+const shouldHideMorateaChatTesting = ({
+  isMorateaSurface,
+  testType,
+}: {
+  isMorateaSurface: boolean;
+  testType: TestType | null;
+}): boolean => isMorateaSurface && testType === 'chat-trigger';
 
 const ActionTestRunnerProvider = ({
   step,
@@ -101,6 +110,7 @@ const TriggerTestRunnerProvider = ({
   );
   const { isLoadingDynamicProperties } = useContext(DynamicPropertiesContext);
   const queryClient = useQueryClient();
+  const isMorateaSurface = useMorateaEditorSurface();
 
   const isPieceTrigger = step.type === FlowTriggerType.PIECE;
   const pieceName = isPieceTrigger ? step.settings.pieceName : '';
@@ -165,10 +175,17 @@ const TriggerTestRunnerProvider = ({
     !isLoadingDynamicProperties &&
     !isPieceLoading &&
     !isManualTrigger &&
-    testType !== null;
+    testType !== null &&
+    !shouldHideMorateaChatTesting({ isMorateaSurface, testType });
 
   const fireTest = useCallback(() => {
-    if (!canFireTest || !testType) return;
+    if (
+      !canFireTest ||
+      !testType ||
+      shouldHideMorateaChatTesting({ isMorateaSurface, testType })
+    ) {
+      return;
+    }
     switch (testType) {
       case 'chat-trigger':
         setChatDrawerOpenSource(ChatDrawerSource.TEST_STEP);
@@ -191,6 +208,7 @@ const TriggerTestRunnerProvider = ({
     simulateTrigger,
     pollTrigger,
     setChatDrawerOpenSource,
+    isMorateaSurface,
   ]);
 
   return (
@@ -241,6 +259,7 @@ export {
   useActionTestRunner,
   TriggerTestRunnerProvider,
   useTriggerTestRunner,
+  shouldHideMorateaChatTesting,
 };
 
 type ActionTestRunnerContextValue = {

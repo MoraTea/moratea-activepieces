@@ -8,7 +8,7 @@ import {
 } from '@activepieces/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { t } from 'i18next';
-import { ChevronDown, CircleHelp, HistoryIcon } from 'lucide-react';
+import { ArrowLeft, ChevronDown, CircleHelp, HistoryIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   createSearchParams,
@@ -39,7 +39,7 @@ import { getProjectName, projectCollectionUtils } from '@/features/projects';
 import { useAuthorization } from '@/hooks/authorization-hooks';
 import { flagsHooks } from '@/hooks/flags-hooks';
 import { authenticationSession } from '@/lib/authentication-session';
-import { useNewWindow } from '@/lib/navigation-utils';
+import { useMorateaEditorSurface, useNewWindow } from '@/lib/navigation-utils';
 import { NEW_FLOW_QUERY_PARAM } from '@/lib/route-utils';
 import { cn } from '@/lib/utils';
 
@@ -53,6 +53,7 @@ export const BuilderHeader = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const openNewWindow = useNewWindow();
+  const isMorateaSurface = useMorateaEditorSurface();
   const { data: showSupport } = flagsHooks.useFlag<boolean>(
     ApFlagId.SHOW_COMMUNITY,
   );
@@ -98,7 +99,45 @@ export const BuilderHeader = () => {
     });
   };
 
-  const titleContent = (
+  const titleContent = isMorateaSurface ? (
+    <div className="flex items-center gap-2 px-4">
+      <Button
+        variant="ghost"
+        className="gap-1 px-2"
+        onClick={() => window.history.back()}
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to MoraTea
+      </Button>
+      <div
+        className={cn('flex items-center gap-1 text-sm', {
+          'max-w-[500px]': !isEditingFlowName,
+        })}
+      >
+        <EditableText
+          className="hover:cursor-text"
+          value={flowVersion.displayName}
+          readonly={!isLatestVersion}
+          onValueChange={(value) => {
+            applyOperation(
+              {
+                type: FlowOperationType.CHANGE_NAME,
+                request: {
+                  displayName: value,
+                },
+              },
+              () => {
+                flowHooks.invalidateFlowsQuery(queryClient);
+              },
+            );
+          }}
+          isEditing={isEditingFlowName}
+          setIsEditing={setIsEditingFlowName}
+          tooltipContent=""
+        />
+      </div>
+    </div>
+  ) : (
     <div className="flex items-center gap-2 px-4">
       <Breadcrumb>
         <BreadcrumbList>
@@ -175,7 +214,20 @@ export const BuilderHeader = () => {
     </div>
   );
 
-  const rightContent = (
+  const rightContent = isMorateaSurface ? (
+    <div className="flex items-center justify-center gap-4">
+      {hasPermissionToReadRuns && (
+        <Button
+          variant="ghost"
+          onClick={() => setRightSidebar(RightSideBarType.RUNS)}
+          className="gap-2 px-2"
+        >
+          <HistoryIcon className="w-4 h-4" />
+          {t('Runs')}
+        </Button>
+      )}
+    </div>
+  ) : (
     <div className="flex items-center justify-center gap-4">
       {showSupport && (
         <Button
@@ -206,8 +258,9 @@ export const BuilderHeader = () => {
     </div>
   );
 
-  const leftContent = embedState.isEmbedded ? <HomeButton /> : null;
-
+  const leftContent = isMorateaSurface ? null : embedState.isEmbedded ? (
+    <HomeButton />
+  ) : null;
   return (
     <div
       style={{

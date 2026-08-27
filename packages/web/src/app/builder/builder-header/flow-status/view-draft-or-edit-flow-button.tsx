@@ -7,6 +7,11 @@ import { useLocation } from 'react-use';
 
 import { Button } from '@/components/ui/button';
 import { useAuthorization } from '@/hooks/authorization-hooks';
+import {
+  morateaEditorNavigationOptions,
+  useMorateaEditorSurface,
+  withMorateaEditorSurface,
+} from '@/lib/navigation-utils';
 
 import { useBuilderStateContext } from '../../builder-hooks';
 import { flowCanvasHooks } from '../../flow-canvas/hooks';
@@ -16,6 +21,7 @@ const EditFlowOrViewDraftButton = ({ onCanvas }: { onCanvas: boolean }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { checkAccess } = useAuthorization();
+  const isMorateaSurface = useMorateaEditorSurface();
   const { switchToDraft, isSwitchingToDraftPending } =
     flowCanvasHooks.useSwitchToDraft();
   const [flowVersion, flowId, readonly, run] = useBuilderStateContext(
@@ -28,10 +34,20 @@ const EditFlowOrViewDraftButton = ({ onCanvas }: { onCanvas: boolean }) => {
   }
   const handleClick = () => {
     if (location.pathname?.includes('/runs')) {
-      navigate(`/flows/${flowId}`);
-    } else {
-      switchToDraft();
+      const path = withMorateaEditorSurface(
+        `/flows/${flowId}`,
+        isMorateaSurface,
+      );
+      const navigationOptions =
+        morateaEditorNavigationOptions(isMorateaSurface);
+      if (navigationOptions) {
+        navigate(path, navigationOptions);
+        return;
+      }
+      navigate(path);
+      return;
     }
+    switchToDraft();
   };
   const { text, icon } = getButtonTextAndIcon({
     hasPermissionToEditFlow: permissionToEditFlow,
@@ -54,13 +70,7 @@ const EditFlowOrViewDraftButton = ({ onCanvas }: { onCanvas: boolean }) => {
           variant={'basic'}
           loading={isSwitchingToDraftPending}
           className="gap-2"
-          onClick={() => {
-            if (location.pathname?.includes('/runs')) {
-              navigate(`/flows/${flowId}`);
-            } else {
-              switchToDraft();
-            }
-          }}
+          onClick={handleClick}
         >
           {icon}
           {text}

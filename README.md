@@ -95,6 +95,10 @@ When you contribute pieces to Activepieces they become automatically available a
 
 **We release updates frequently. Check the product changelog for the latest features.**
 
+### MoraTea editor surface
+
+`/flows/:flowId?surface=moratea` renders the same flow editor with a reduced product shell: the project sidebar and framed container styling are removed for a full-viewport builder, production controls (Publish) and auxiliary surfaces (Chat) are hidden while draft editing, version/lock/run banners, flow-name editing, and Runs history remain, and a Back button returns via `window.history.back()`. Current-project and authentication redirects preserve the exact query string (including `surface=moratea`) so the surface survives navigation and login flows. The normal `/flows/:flowId` route is unchanged. This is presentation only; MoraTea server authority remains the security boundary.
+
 
 ## 🔌 Create Your Own Piece
 

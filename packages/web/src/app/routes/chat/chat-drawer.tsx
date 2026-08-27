@@ -16,10 +16,12 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { useMorateaEditorSurface } from '@/lib/navigation-utils';
 
 import { FlowChat } from './flow-chat';
 
 export const ChatDrawer = () => {
+  const isMorateaSurface = useMorateaEditorSurface();
   const [
     chatSessionMessages,
     chatSessionId,
@@ -41,6 +43,9 @@ export const ChatDrawer = () => {
   ]);
   const socket = useSocket();
   const isListening = useRef(false);
+  if (isMorateaSurface) {
+    return null;
+  }
   //shouldn't use testFlow hook here because it would run the flow with sample data not the real user message
   const listenToTestRun = () => {
     isListening.current = true;

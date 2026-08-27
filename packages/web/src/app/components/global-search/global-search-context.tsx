@@ -222,15 +222,18 @@ function GlobalSearchDialogContent({
 
 export function GlobalSearchProvider({
   children,
+  disabled = false,
 }: {
   children: React.ReactNode;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const { embedState } = useEmbedding();
   const { hideGlobalSearch } = embedState;
+  const searchDisabled = disabled || hideGlobalSearch;
 
   useEffect(() => {
-    if (hideGlobalSearch) {
+    if (searchDisabled) {
       return;
     }
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -241,12 +244,12 @@ export function GlobalSearchProvider({
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [hideGlobalSearch]);
+  }, [searchDisabled]);
 
   return (
     <GlobalSearchContext.Provider value={{ open, setOpen }}>
       {children}
-      {!hideGlobalSearch && (
+      {!searchDisabled && (
         <GlobalSearchDialogContent open={open} onOpenChange={setOpen} />
       )}
     </GlobalSearchContext.Provider>

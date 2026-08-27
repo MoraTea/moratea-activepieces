@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { authenticationSession } from '@/lib/authentication-session';
 import {
   FROM_QUERY_PARAM,
+  isMorateaEditorSurfaceReturnPath,
   LOGIN_QUERY_PARAM,
   PROVIDER_NAME_QUERY_PARAM,
   STATE_QUERY_PARAM,
@@ -43,7 +44,9 @@ const RedirectPage: React.FC = React.memo(() => {
             navigate('/create-platform');
             return;
           }
-          navigate(from);
+          isMorateaEditorSurfaceReturnPath(from)
+            ? navigate(from, { replace: true })
+            : navigate(from);
         } catch (e) {
           if (
             api.isError(e) &&

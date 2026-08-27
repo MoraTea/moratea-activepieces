@@ -9,6 +9,7 @@ import { Zap } from 'lucide-react';
 import React from 'react';
 
 import { triggerEventHooks } from '@/features/flows';
+import { useMorateaEditorSurface } from '@/lib/navigation-utils';
 
 import { useBuilderStateContext } from '../../builder-hooks';
 import { stepPropertiesSnapshotUtils } from '../../data-display/build-step-properties-snapshot';
@@ -16,7 +17,10 @@ import { ErrorExplanationContext } from '../../data-display/explanation-prompt';
 import { StepDataPanelHeader } from '../../step-data/step-data-panel-header';
 import { StepDataPanelViewToggle } from '../../step-data/step-data-panel-view-toggle';
 import { JsonTreeSkeleton } from '../json-tree-skeleton';
-import { useTriggerTestRunner } from '../test-runner-context';
+import {
+  shouldHideMorateaChatTesting,
+  useTriggerTestRunner,
+} from '../test-runner-context';
 import { TestSampleDataViewer } from '../test-sample-data-viewer';
 
 import { FirstTimeTestingSection } from './first-time-testing-section';
@@ -34,6 +38,7 @@ type TestTriggerSectionProps = {
 const TestTriggerSection = React.memo(
   ({ isSaving, flowVersionId, flowId }: TestTriggerSectionProps) => {
     const runner = useTriggerTestRunner();
+    const isMorateaSurface = useMorateaEditorSurface();
     const currentStep = useBuilderStateContext((state) =>
       state.selectedStep
         ? flowStructureUtil.getStep(
@@ -80,6 +85,10 @@ const TestTriggerSection = React.memo(
       resetSimulation,
       fireTest,
     } = runner;
+    const hideMorateaChatTesting = shouldHideMorateaChatTesting({
+      isMorateaSurface,
+      testType,
+    });
 
     const sampleDataSelected = !isNil(lastTestDate) || !isNil(errorMessage);
     const isTestedBefore = !isNil(lastTestDate);
@@ -195,19 +204,21 @@ const TestTriggerSection = React.memo(
                     )}
                   </span>
                 </div>
-                <FirstTimeTestingSection
-                  isValid={isValid}
-                  testType={testType}
-                  isTesting={
-                    isPollingTesting || isSimulating || isTestingDialogOpen
-                  }
-                  mockData={mockData}
-                  isSaving={isSaving || isSavingMockdata}
-                  onSimulateTrigger={fireTest}
-                  onPollTrigger={fireTest}
-                  onMcpToolTesting={fireTest}
-                  onSaveMockAsSampleData={saveMockAsSampleData}
-                />
+                {!hideMorateaChatTesting && (
+                  <FirstTimeTestingSection
+                    isValid={isValid}
+                    testType={testType}
+                    isTesting={
+                      isPollingTesting || isSimulating || isTestingDialogOpen
+                    }
+                    mockData={mockData}
+                    isSaving={isSaving || isSavingMockdata}
+                    onSimulateTrigger={fireTest}
+                    onPollTrigger={fireTest}
+                    onMcpToolTesting={fireTest}
+                    onSaveMockAsSampleData={saveMockAsSampleData}
+                  />
+                )}
               </div>
             </div>
           )}
@@ -217,6 +228,7 @@ const TestTriggerSection = React.memo(
               <TestSampleDataViewer
                 onRetest={fireTest}
                 hideCancel={true}
+                hideRetest={hideMorateaChatTesting}
                 isValid={isValid}
                 consoleLogs={null}
                 isTesting={isPollingTesting}

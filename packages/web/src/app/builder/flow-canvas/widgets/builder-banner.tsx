@@ -1,6 +1,7 @@
 import { isNil } from '@activepieces/core-utils';
 
 import { ResourceLockWidget } from '@/components/custom/resource-lock-widget';
+import { useMorateaEditorSurface } from '@/lib/navigation-utils';
 
 import { useBuilderStateContext } from '../../builder-hooks';
 
@@ -12,6 +13,7 @@ import { ViewingOldVersionWidget } from './viewing-old-version-widget';
 const BuilderBanner = () => {
   const { lockedBy, takeOver } = useFlowLock();
   const run = useBuilderStateContext((state) => state.run);
+  const isMorateaSurface = useMorateaEditorSurface();
 
   if (lockedBy) {
     return (
@@ -28,7 +30,7 @@ const BuilderBanner = () => {
   return (
     <>
       <ViewingOldVersionWidget />
-      <PublishFlowReminderWidget />
+      {!isMorateaSurface && <PublishFlowReminderWidget />}
     </>
   );
 };

@@ -11,7 +11,6 @@ import {
   useDefaultRedirectPath,
 } from '@/lib/navigation-utils';
 
-
 import { authenticationSession } from '../../lib/authentication-session';
 import { AllowOnlyLoggedInUserOnlyGuard } from '../components/allow-logged-in-user-only-guard';
 

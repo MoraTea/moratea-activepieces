@@ -30,14 +30,54 @@ export const PROVIDER_NAME_QUERY_PARAM = 'providerName';
 export const MORATEA_SURFACE_QUERY_PARAM = 'surface';
 export const MORATEA_SURFACE_VALUE = 'moratea';
 
-export const SURFACE_QUERY_PARAM = MORATEA_SURFACE_QUERY_PARAM;
-export const MORATEA_EDITOR_SURFACE = MORATEA_SURFACE_VALUE;
-
 export const isMorateaEditorSurface = (
   searchParams: URLSearchParams,
 ): boolean => {
   return (
     searchParams.get(MORATEA_SURFACE_QUERY_PARAM) === MORATEA_SURFACE_VALUE
+  );
+};
+
+export const withMorateaEditorSurface = (
+  path: string,
+  isMorateaSurface: boolean,
+): string => {
+  if (!isMorateaSurface) {
+    return path;
+  }
+
+  const fragmentStart = path.indexOf('#');
+  const pathWithoutFragment =
+    fragmentStart === -1 ? path : path.slice(0, fragmentStart);
+  const fragment = fragmentStart === -1 ? '' : path.slice(fragmentStart);
+  const queryStart = pathWithoutFragment.indexOf('?');
+  const pathname =
+    queryStart === -1
+      ? pathWithoutFragment
+      : pathWithoutFragment.slice(0, queryStart);
+  const searchParams = new URLSearchParams(
+    queryStart === -1 ? '' : pathWithoutFragment.slice(queryStart + 1),
+  );
+  searchParams.set(MORATEA_SURFACE_QUERY_PARAM, MORATEA_SURFACE_VALUE);
+
+  return `${pathname}?${searchParams.toString()}${fragment}`;
+};
+
+export const morateaEditorNavigationOptions = (
+  isSurface: boolean,
+): { replace: true } | undefined => {
+  return isSurface ? { replace: true } : undefined;
+};
+
+export const isMorateaEditorSurfaceReturnPath = (path: string): boolean => {
+  const pathWithoutFragment = path.split('#', 1)[0];
+  const queryStart = pathWithoutFragment.indexOf('?');
+  if (queryStart === -1) {
+    return false;
+  }
+
+  return isMorateaEditorSurface(
+    new URLSearchParams(pathWithoutFragment.slice(queryStart + 1)),
   );
 };
 
@@ -70,5 +110,8 @@ export const useRedirectAfterLogin = () => {
   const [searchParams] = useSearchParams();
   const defaultRedirectPath = useDefaultRedirectPath();
   const from = searchParams.get(FROM_QUERY_PARAM) ?? defaultRedirectPath;
-  return () => navigate(from);
+  return () =>
+    isMorateaEditorSurfaceReturnPath(from)
+      ? navigate(from, { replace: true })
+      : navigate(from);
 };
