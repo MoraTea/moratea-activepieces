@@ -76,4 +76,14 @@ export const authenticationApi = {
       request,
     );
   },
+  redeemMorateaEditorHandoff(): Promise<MorateaEditorHandoffResponse> {
+    return api.post<MorateaEditorHandoffResponse>(
+      '/v1/authentication/moratea-editor-handoff/redeem',
+    );
+  },
+};
+
+export type MorateaEditorHandoffResponse = {
+  session: AuthenticationResponse;
+  editorPath: string;
 };

@@ -5,6 +5,7 @@ import { AcceptInvitation } from '@/features/members';
 import { ChangePasswordPage } from './change-password';
 import { CreatePlatformPage } from './create-platform';
 import { ResetPasswordPage } from './forget-password';
+import { MorateaEditorHandoffPage } from './moratea-editor-handoff';
 import { SignInPage } from './sign-in';
 import { SignUpPage } from './sign-up';
 
@@ -62,6 +63,14 @@ export const authRoutes = [
     element: (
       <PageTitle title="Accept Invitation">
         <AcceptInvitation />
+      </PageTitle>
+    ),
+  },
+  {
+    path: '/moratea-editor-handoff',
+    element: (
+      <PageTitle title="MoraTea Editor">
+        <MorateaEditorHandoffPage />
       </PageTitle>
     ),
   },

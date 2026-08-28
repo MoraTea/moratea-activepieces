@@ -7,6 +7,7 @@ import { AIProviderEntity } from '../ai/ai-provider-entity'
 import { AiToolConfigEntity } from '../ai/ai-tool-config-entity'
 import { PlatformAnalyticsReportEntity } from '../analytics/platform-analytics-report.entity'
 import { AppConnectionEntity } from '../app-connection/app-connection.entity'
+import { MorateaEditorHandoffEntity } from '../authentication/moratea-editor-handoff.entity'
 import { OtpEntity } from '../authentication/otp/otp-entity'
 import { UserIdentityEntity } from '../authentication/user-identity/user-identity-entity'
 import { AgentConversationEntity } from '../ee/agent/agent-conversation-entity'
@@ -122,6 +123,7 @@ function getEntities(): EntitySchema<unknown>[] {
         SigningKeyEntity,
         OAuthAppEntity,
         OtpEntity,
+        MorateaEditorHandoffEntity,
         ApiKeyEntity,
         TemplateEntity,
         GitRepoEntity,

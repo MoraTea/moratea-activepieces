@@ -33,6 +33,13 @@ function stringValidator(value: string) {
     return isValid ? true : 'Value must be a non-empty string'
 }
 
+function morateaEditorHandoffSecretValidator(value: string | undefined): true | string {
+    if (isNil(value)) {
+        return true
+    }
+    return /^[0-9a-f]{64}$/.test(value) ? true : 'Value must be exactly 64 lowercase hexadecimal characters'
+}
+
 function urlValidator(value: string) {
     try {
         const { protocol } = new URL(value)
@@ -152,6 +159,7 @@ const systemPropValidators: {
     [AppSystemProp.SMTP_USERNAME]: stringValidator,
     [AppSystemProp.TELEMETRY_ENABLED]: booleanValidator,
     [AppSystemProp.TOOL_SEARCH_ENABLED]: booleanValidator,
+    [AppSystemProp.MORATEA_EDITOR_HANDOFF_SECRET]: morateaEditorHandoffSecretValidator,
     [AppSystemProp.EXACT_RELEASE_TOOLS_ENABLED]: booleanValidator,
     [AppSystemProp.TRIGGER_DEFAULT_POLL_INTERVAL]: numberValidator,
     [AppSystemProp.WEBHOOK_TIMEOUT_SECONDS]: numberValidator,
@@ -233,7 +241,9 @@ const validateSystemPropTypes = () => {
         if (onlyValidateIfValueIsSet) {
             const validationResult = systemPropValidators[prop](value)
             if (validationResult !== true) {
-                errors[prop] = `Current value: ${value}. Expected: ${validationResult}`
+                errors[prop] = prop === AppSystemProp.MORATEA_EDITOR_HANDOFF_SECRET
+                    ? `Expected: ${validationResult}`
+                    : `Current value: ${value}. Expected: ${validationResult}`
             }
         }
     }
